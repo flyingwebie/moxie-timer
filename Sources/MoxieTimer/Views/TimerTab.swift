@@ -34,6 +34,10 @@ struct TimerTab: View {
                 adjustBox(session: session, now: now)
             }
 
+            if timer.draft.client == nil {
+                SuggestionChip()
+            }
+
             EntryFields(draft: $timer.draft)
 
             if let error = timer.lastError {

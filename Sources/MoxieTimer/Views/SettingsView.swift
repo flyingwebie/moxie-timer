@@ -112,6 +112,10 @@ struct SettingsView: View {
 
             Divider()
 
+            ReviewSettingsSection()
+
+            Divider()
+
             AISettingsSection()
 
             Divider()

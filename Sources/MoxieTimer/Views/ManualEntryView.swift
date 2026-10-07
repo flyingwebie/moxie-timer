@@ -3,7 +3,11 @@ import SwiftUI
 /// "Add entry" form — logs a block of time without running the timer.
 struct ManualEntryView: View {
     @Environment(TimerStore.self) private var timer
+    @Environment(HistoryStore.self) private var history
     @Environment(WidgetUI.self) private var ui
+
+    @State private var editing: LoggedEntry?
+    @State private var returnTo: WidgetUI.Route?
 
     @State private var draft = EntryDraft()
     @State private var start = Date.now.addingTimeInterval(-3600)
@@ -18,7 +22,7 @@ struct ManualEntryView: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 Button { close() } label: {
-                    Label("Add time entry", systemImage: "chevron.left")
+                    Label(editing == nil ? "Add time entry" : "Edit held entry", systemImage: "chevron.left")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(Theme.ink)
                 }
@@ -53,10 +57,22 @@ struct ManualEntryView: View {
             }
 
             HStack {
-                Button("Cancel") { close() }
+                if let editing {
+                    Button(role: .destructive) {
+                        history.remove(editing)
+                        close()
+                    } label: {
+                        Label("Delete", systemImage: "trash")
+                    }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.muted)
+                    .foregroundStyle(Theme.danger)
+                } else {
+                    Button("Cancel") { close() }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.muted)
+                }
                 Spacer()
                 Button(action: save) {
                     HStack(spacing: 8) {
@@ -73,11 +89,21 @@ struct ManualEntryView: View {
         .onAppear {
             guard !didPrefill else { return }
             didPrefill = true
-            draft = timer.draft.reusable
-            let now = Date.now
-            end = Calendar.current.date(bySetting: .second, value: 0, of: now) ?? now
-            if end > now { end = end.addingTimeInterval(-60) }
-            start = end.addingTimeInterval(-3600)
+            let seed = ui.editorSeed
+            ui.editorSeed = nil
+            returnTo = seed?.returnTo
+            if let id = seed?.editId, let entry = history.entries.first(where: { $0.id == id }) {
+                editing = entry
+                draft = entry.draft
+                start = entry.start
+                end = entry.end
+            } else {
+                draft = timer.draft.reusable
+                let now = Date.now
+                end = seed?.end ?? (Calendar.current.date(bySetting: .second, value: 0, of: now) ?? now)
+                if seed?.end == nil, end > now { end = end.addingTimeInterval(-60) }
+                start = seed?.start ?? end.addingTimeInterval(-3600)
+            }
             syncDuration()
         }
         .onChange(of: start) { syncDuration() }
@@ -113,8 +139,17 @@ struct ManualEntryView: View {
         Task {
             defer { isSaving = false }
             do {
-                _ = try await timer.log(start: start, end: end, draft: draft)
-                ui.tab = .recent
+                if var entry = editing {
+                    guard end > start else { throw LogError.invalidRange }
+                    entry.start = start
+                    entry.end = end
+                    entry.draft = draft
+                    entry.sendError = nil
+                    history.update(entry)
+                } else {
+                    _ = try await timer.log(start: start, end: end, draft: draft)
+                    if returnTo == nil { ui.tab = .recent }
+                }
                 close()
             } catch {
                 self.error = error.localizedDescription
@@ -123,6 +158,6 @@ struct ManualEntryView: View {
     }
 
     private func close() {
-        ui.route = nil
+        ui.route = returnTo
     }
 }

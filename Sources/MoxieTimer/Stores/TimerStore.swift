@@ -124,29 +124,51 @@ final class TimerStore {
 
     // MARK: Logging
 
+    /// Whether the running time can be stopped now. In review mode the client/project can be chosen later.
+    var canSaveCurrent: Bool {
+        settings.holdForReview || (draft.client != nil && draft.project != nil)
+    }
+
+    private(set) var isSending = false
+
+    var holdsForReview: Bool { settings.holdForReview }
+
+    /// Records a block of time: held locally in review mode, otherwise sent to Moxie straight away.
     func log(start: Date, end: Date, draft: EntryDraft) async throws -> LoggedEntry {
-        guard let api = settings.makeAPI(), settings.isConfigured else { throw LogError.notConfigured }
-        guard let client = draft.client, let project = draft.project else { throw LogError.missingClientOrProject }
         // Moxie stores whole seconds; drop sub-second noise so start/end match what we display.
         let start = Date(timeIntervalSince1970: start.timeIntervalSince1970.rounded(.down))
         let end = Date(timeIntervalSince1970: end.timeIntervalSince1970.rounded(.down))
         guard end > start else { throw LogError.invalidRange }
+        let entry = LoggedEntry(id: UUID().uuidString, moxieId: nil, start: start, end: end, draft: draft, pending: true)
+        if settings.holdForReview {
+            history.add(entry)
+            return entry
+        }
+        return try await send(entry, isNew: true)
+    }
+
+    /// Pushes one entry to Moxie and marks it sent.
+    @discardableResult
+    func send(_ entry: LoggedEntry, isNew: Bool = false) async throws -> LoggedEntry {
+        guard let api = settings.makeAPI(), settings.isConfigured else { throw LogError.notConfigured }
+        guard let client = entry.draft.client, let project = entry.draft.project else { throw LogError.missingClientOrProject }
+        guard entry.end > entry.start else { throw LogError.invalidRange }
 
         func request(billable: Bool?) -> TimeEntryRequest {
             TimeEntryRequest(
-                timerStart: start.formatted(.iso8601),
-                timerEnd: end.formatted(.iso8601),
+                timerStart: entry.start.formatted(.iso8601),
+                timerEnd: entry.end.formatted(.iso8601),
                 clientName: client.name,
                 projectName: project.name,
-                deliverableName: draft.task?.name,
-                notes: draft.composedNotes,
+                deliverableName: entry.draft.task?.name,
+                notes: entry.draft.composedNotes,
                 userEmail: settings.userEmail.trimmingCharacters(in: .whitespaces),
                 billable: billable
             )
         }
 
         notice = nil
-        let wanted = draft.isBillable
+        let wanted = entry.draft.isBillable
         let event: TimerEvent?
         do {
             event = try await api.createTimeEntry(request(billable: wanted))
@@ -159,10 +181,37 @@ final class TimerStore {
             notice = "Moxie saved this entry as \(stored ? "billable" : "non-billable") — the API ignored the toggle."
         }
 
-        let entry = LoggedEntry(id: UUID().uuidString, moxieId: event?.id, start: start, end: end, draft: draft,
-                                moxieBillable: event?.billable)
-        history.add(entry)
-        return entry
+        var sent = entry
+        sent.moxieId = event?.id
+        sent.moxieBillable = event?.billable
+        sent.pending = nil
+        sent.sendError = nil
+        if isNew { history.add(sent) } else { history.update(sent) }
+        return sent
+    }
+
+    /// Sends every held entry that has a client and project. Failures stay held with their error.
+    func sendPending() async -> (sent: Int, failed: Int, skipped: Int) {
+        guard !isSending else { return (0, 0, 0) }
+        isSending = true
+        defer { isSending = false }
+        var sent = 0, failed = 0, skipped = 0
+        for entry in history.pending {
+            guard entry.hasCategory else {
+                skipped += 1
+                continue
+            }
+            do {
+                try await send(entry)
+                sent += 1
+            } catch {
+                var held = entry
+                held.sendError = error.localizedDescription
+                history.update(held)
+                failed += 1
+            }
+        }
+        return (sent, failed, skipped)
     }
 
     private func persist() {

@@ -157,7 +157,7 @@ final class FocusStore {
 
     private func saveRunningTimeBeforeSwitching() async -> Bool {
         guard timer.session != nil else { return true }
-        guard timer.draft.client != nil, timer.draft.project != nil else {
+        guard timer.canSaveCurrent else {
             // Nothing to save against yet — the running time simply carries over to the new task.
             return true
         }
@@ -169,7 +169,9 @@ final class FocusStore {
             lastError = "Couldn't save the previous time: \(error)"
             return false
         }
-        banner = "Saved \(DurationFormat.short(elapsed)) on “\(previous)” to Moxie before switching."
+        banner = timer.holdsForReview
+            ? "Held \(DurationFormat.short(elapsed)) on “\(previous)” for review before switching."
+            : "Saved \(DurationFormat.short(elapsed)) on “\(previous)” to Moxie before switching."
         return true
     }
 

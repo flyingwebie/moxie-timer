@@ -1,3 +1,4 @@
+import ApplicationServices
 import SwiftUI
 
 struct FocusSettingsSection: View {
@@ -101,5 +102,110 @@ struct AISettingsSection: View {
         testing.insert(engine)
         results[engine] = await ai.test(engine)
         testing.remove(engine)
+    }
+}
+
+struct ReviewSettingsSection: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(ActivityWatcher.self) private var activity
+    @State private var accessibilityGranted = AXIsProcessTrusted()
+    @State private var forgot = false
+
+    private let weekdays = [(2, "M"), (3, "T"), (4, "W"), (5, "T"), (6, "F"), (7, "S"), (1, "S")]
+
+    var body: some View {
+        @Bindable var settings = settings
+
+        VStack(alignment: .leading, spacing: 8) {
+            CapsLabel("Review & reminders")
+
+            toggle("Hold entries for an end-of-day review", $settings.holdForReview)
+            if settings.holdForReview {
+                HStack {
+                    Text("Review prompt at").font(.system(size: 12))
+                    Spacer()
+                    timePicker($settings.reviewMinutes)
+                }
+            }
+
+            toggle("Remind me when I work without a timer", $settings.trackingReminders)
+                .onChange(of: settings.trackingReminders) { _, on in if on { Notifier.shared.requestAuthorization() } }
+
+            HStack {
+                Text("Work hours").font(.system(size: 12))
+                Spacer()
+                timePicker($settings.workStartMinutes)
+                Text("–").foregroundStyle(Theme.muted)
+                timePicker($settings.workEndMinutes)
+            }
+            HStack(spacing: 4) {
+                ForEach(weekdays, id: \.0) { day, letter in
+                    let on = settings.workDays.contains(day)
+                    Button {
+                        if on { settings.workDays.remove(day) } else { settings.workDays.insert(day) }
+                    } label: {
+                        Text(letter)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(on ? .white : Theme.muted)
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(on ? Theme.navy : Theme.cream))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            Text("Reminders and gap-finding only use these hours.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+
+            toggle("Use window titles for project suggestions", $settings.useWindowTitles)
+                .onChange(of: settings.useWindowTitles) { _, on in
+                    if on {
+                        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+                        accessibilityGranted = AXIsProcessTrustedWithOptions(options)
+                    }
+                }
+            if settings.useWindowTitles && !accessibilityGranted {
+                Text("Allow Moxie Timer in System Settings → Privacy & Security → Accessibility. Each app update may need it re-allowed.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.onBreak)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                Text(forgot ? "Forgotten." : "Suggestions are learned locally while you track.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                Spacer()
+                Button("Forget learned apps") {
+                    activity.learner.forgetAll()
+                    forgot = true
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.navy)
+            }
+        }
+        .onAppear { accessibilityGranted = AXIsProcessTrusted() }
+    }
+
+    private func toggle(_ title: String, _ binding: Binding<Bool>) -> some View {
+        Toggle(title, isOn: binding)
+            .toggleStyle(.switch)
+            .tint(Theme.navy)
+            .controlSize(.small)
+            .font(.system(size: 12))
+    }
+
+    private func timePicker(_ minutes: Binding<Int>) -> some View {
+        DatePicker("", selection: Binding(
+            get: { Calendar.current.startOfDay(for: .now).addingTimeInterval(TimeInterval(minutes.wrappedValue * 60)) },
+            set: { date in
+                let parts = Calendar.current.dateComponents([.hour, .minute], from: date)
+                minutes.wrappedValue = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+            }
+        ), displayedComponents: .hourAndMinute)
+        .labelsHidden()
+        .datePickerStyle(.field)
+        .frame(width: 80)
     }
 }

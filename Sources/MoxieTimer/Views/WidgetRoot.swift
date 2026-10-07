@@ -27,6 +27,11 @@ struct PillBar: View {
     @Environment(WidgetUI.self) private var ui
     @Environment(Updater.self) private var updater
     @Environment(FocusStore.self) private var focus
+    @Environment(ActivityWatcher.self) private var activity
+
+    private var notTracking: Bool {
+        activity.nudge != .none && timer.session?.isRunning != true
+    }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -68,6 +73,10 @@ struct PillBar: View {
                         Text(blockText(block))
                             .font(.system(size: 13, weight: .medium).monospacedDigit())
                             .foregroundStyle(Theme.muted)
+                    } else if notTracking {
+                        Text("Not tracking")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.onBreak)
                     } else {
                         Text(timeText)
                             .font(.system(size: 14, weight: .semibold).monospacedDigit())
@@ -88,7 +97,7 @@ struct PillBar: View {
                         }
                     }
                     pillButton("stop.fill", filled: true, help: "Stop & save") {
-                        if timer.draft.client == nil || timer.draft.project == nil {
+                        if !timer.canSaveCurrent {
                             ui.tab = .timer
                             ui.expand()
                             timer.lastError = LogError.missingClientOrProject.localizedDescription
@@ -107,8 +116,8 @@ struct PillBar: View {
             }
             .padding(.trailing, 4)
             .frame(height: 36)
-            .background(Capsule().fill(Theme.pill))
-            .overlay(Capsule().strokeBorder(Theme.navy.opacity(0.35), lineWidth: 1))
+            .background(Capsule().fill(notTracking ? Theme.onBreak.opacity(0.15) : Theme.pill))
+            .overlay(Capsule().strokeBorder(notTracking ? Theme.onBreak : Theme.navy.opacity(0.35), lineWidth: notTracking ? 1.5 : 1))
             .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
     }
@@ -119,6 +128,7 @@ struct PillBar: View {
     }
 
     private var dotColor: Color {
+        if notTracking { return Theme.onBreak }
         if let block = focus.block {
             if block.pausedAt != nil { return Theme.muted }
             switch block.phase {
@@ -194,10 +204,13 @@ struct ExpandedCard: View {
                 TaskListView()
             } else if ui.route == .capture {
                 CaptureView()
+            } else if ui.route == .review {
+                ReviewView()
             } else {
                 VStack(spacing: 0) {
                     UpdateBanner()
                     IdleBanner()
+                    ReviewBanner()
                     SaveNoticeBanner()
                     header
                     switch ui.tab {

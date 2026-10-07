@@ -28,6 +28,38 @@ final class AppSettings {
         didSet { defaults.set(showOnAllSpaces, forKey: "showOnAllSpaces"); onWindowPreferencesChange?() }
     }
 
+    /// Keep entries on this Mac until the end-of-day review instead of sending each one immediately.
+    var holdForReview: Bool {
+        didSet { defaults.set(holdForReview, forKey: "holdForReview") }
+    }
+
+    /// Minutes after midnight for the end-of-day review prompt.
+    var reviewMinutes: Int {
+        didSet { defaults.set(reviewMinutes, forKey: "reviewMinutes") }
+    }
+
+    var trackingReminders: Bool {
+        didSet { defaults.set(trackingReminders, forKey: "trackingReminders") }
+    }
+
+    var workStartMinutes: Int {
+        didSet { defaults.set(workStartMinutes, forKey: "workStartMinutes") }
+    }
+
+    var workEndMinutes: Int {
+        didSet { defaults.set(workEndMinutes, forKey: "workEndMinutes") }
+    }
+
+    /// Calendar weekdays (1 = Sunday … 7 = Saturday).
+    var workDays: Set<Int> {
+        didSet { defaults.set(Array(workDays), forKey: "workDays") }
+    }
+
+    /// Read window titles (Accessibility permission) to improve project suggestions.
+    var useWindowTitles: Bool {
+        didSet { defaults.set(useWindowTitles, forKey: "useWindowTitles") }
+    }
+
     var launchAtLogin: Bool {
         didSet {
             do {
@@ -44,7 +76,31 @@ final class AppSettings {
         baseURL = defaults.string(forKey: "apiBaseURL") ?? ""
         keepOnTop = defaults.object(forKey: "keepOnTop") as? Bool ?? true
         showOnAllSpaces = defaults.object(forKey: "showOnAllSpaces") as? Bool ?? true
+        holdForReview = defaults.object(forKey: "holdForReview") as? Bool ?? true
+        reviewMinutes = defaults.object(forKey: "reviewMinutes") as? Int ?? 17 * 60 + 30
+        trackingReminders = defaults.object(forKey: "trackingReminders") as? Bool ?? true
+        workStartMinutes = defaults.object(forKey: "workStartMinutes") as? Int ?? 9 * 60
+        workEndMinutes = defaults.object(forKey: "workEndMinutes") as? Int ?? 18 * 60
+        workDays = Set(defaults.array(forKey: "workDays") as? [Int] ?? [2, 3, 4, 5, 6])
+        useWindowTitles = defaults.object(forKey: "useWindowTitles") as? Bool ?? false
         launchAtLogin = SMAppService.mainApp.status == .enabled
+    }
+
+    func isWorkTime(_ date: Date) -> Bool {
+        let calendar = Calendar.current
+        guard workDays.contains(calendar.component(.weekday, from: date)) else { return false }
+        let minutes = calendar.component(.hour, from: date) * 60 + calendar.component(.minute, from: date)
+        return minutes >= workStartMinutes && minutes < workEndMinutes
+    }
+
+    /// Today's work-hours window, if today is a work day.
+    func workWindow(on day: Date) -> DateInterval? {
+        let calendar = Calendar.current
+        guard workDays.contains(calendar.component(.weekday, from: day)) else { return nil }
+        let start = calendar.startOfDay(for: day)
+        let from = start.addingTimeInterval(TimeInterval(workStartMinutes * 60))
+        let to = start.addingTimeInterval(TimeInterval(workEndMinutes * 60))
+        return to > from ? DateInterval(start: from, end: to) : nil
     }
 
     var isConfigured: Bool {

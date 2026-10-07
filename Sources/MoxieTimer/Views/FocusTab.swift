@@ -213,7 +213,10 @@ struct FocusTab: View {
             }
 
             if timer.draft.client == nil || timer.draft.project == nil {
-                Label("No client/project yet — set them in the Timer tab before the time is saved.", systemImage: "exclamationmark.circle")
+                Label(timer.canSaveCurrent
+                      ? "No client/project yet — you can set them in the end-of-day review."
+                      : "No client/project yet — set them in the Timer tab before the time is saved.",
+                      systemImage: "exclamationmark.circle")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.onBreak)
             }
@@ -442,6 +445,63 @@ struct IdleBanner: View {
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Theme.warmup.opacity(0.3)))
             .padding(.horizontal, 16)
             .padding(.top, 14)
+        }
+    }
+}
+
+/// Shown on top of the card while entries are held for review.
+struct ReviewBanner: View {
+    @Environment(HistoryStore.self) private var history
+    @Environment(WidgetUI.self) private var ui
+
+    var body: some View {
+        let pending = history.pending
+        if !pending.isEmpty {
+            let olderThanToday = pending.contains { !Calendar.current.isDateInToday($0.start) }
+            Button { ui.route = .review } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "tray.full.fill").foregroundStyle(olderThanToday ? Theme.onBreak : Theme.navy)
+                    Text(olderThanToday
+                         ? "\(pending.count) held entries include earlier days — review & send"
+                         : "\(pending.count) entries (\(DurationFormat.short(pending.reduce(0) { $0 + $1.duration }))) waiting for review")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .bold)).foregroundStyle(Theme.muted)
+                }
+                .padding(10)
+                .background(RoundedRectangle(cornerRadius: 10).fill((olderThanToday ? Theme.onBreak : Theme.navy).opacity(0.07)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+    }
+}
+
+/// "Looks like Client · Project" — one click applies the learned suggestion.
+struct SuggestionChip: View {
+    @Environment(ActivityWatcher.self) private var activity
+
+    var body: some View {
+        if let suggestion = activity.suggestion {
+            Button { activity.applySuggestion() } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "wand.and.stars")
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Use \(suggestion.choice.label)").font(.system(size: 12, weight: .semibold)).lineLimit(1)
+                        Text(suggestion.reason).font(.system(size: 10)).foregroundStyle(Theme.muted).lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Theme.navy)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.navy.opacity(0.06)))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
         }
     }
 }

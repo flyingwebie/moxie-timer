@@ -59,6 +59,7 @@ final class PanelController {
             .environment(model.inbox)
             .environment(model.focus)
             .environment(model.idle)
+            .environment(model.activity)
 
         let host = NSHostingView(rootView: root)
         host.sizingOptions = []

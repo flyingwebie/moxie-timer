@@ -249,7 +249,13 @@ struct LoggedEntry: Codable, Identifiable, Hashable {
     var draft: EntryDraft
     /// What Moxie reported back for `billable`, when it reported anything.
     var moxieBillable: Bool?
+    /// True while the entry is held locally for review (nil for entries from older versions, which were all sent).
+    var pending: Bool?
+    /// Why the last attempt to send this entry failed.
+    var sendError: String?
 
+    var isPending: Bool { pending == true }
+    var hasCategory: Bool { draft.client != nil && draft.project != nil }
     var duration: TimeInterval { end.timeIntervalSince(start) }
     /// Billable state as Moxie stored it, falling back to what was requested.
     var isBillable: Bool { moxieBillable ?? draft.isBillable }

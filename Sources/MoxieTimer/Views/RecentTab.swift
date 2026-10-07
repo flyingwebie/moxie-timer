@@ -46,6 +46,9 @@ struct RecentTab: View {
                                         ui.tab = .timer
                                     } onRemove: {
                                         history.remove(entry)
+                                    } onEdit: {
+                                        ui.editorSeed = .init(editId: entry.id)
+                                        ui.route = .addEntry
                                     }
                                 }
                             } header: {
@@ -66,7 +69,7 @@ struct RecentTab: View {
                 .frame(height: 380)
             }
 
-            Text("Shows entries logged from this Mac. The Moxie API can't list or edit existing time entries.")
+            Text("Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -91,6 +94,7 @@ private struct EntryRow: View {
     let canStart: Bool
     let onStart: () -> Void
     let onRemove: () -> Void
+    var onEdit: (() -> Void)? = nil
 
     @State private var hovering = false
 
@@ -98,7 +102,7 @@ private struct EntryRow: View {
         HStack(alignment: .top, spacing: 10) {
             ClientAvatar(name: entry.draft.client?.name ?? "?", size: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.draft.client?.name ?? "Unknown client")
+                Text(entry.draft.client?.name ?? "No client yet")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
@@ -123,7 +127,12 @@ private struct EntryRow: View {
                     Text(DurationFormat.clock(entry.duration))
                         .font(.system(size: 13, weight: .semibold).monospacedDigit())
                         .foregroundStyle(Theme.ink)
-                    if !entry.isBillable {
+                    if entry.isPending {
+                        Text("NOT SENT")
+                            .font(.system(size: 8, weight: .bold))
+                            .tracking(0.4)
+                            .foregroundStyle(Theme.onBreak)
+                    } else if !entry.isBillable {
                         Text("NON-BILLABLE")
                             .font(.system(size: 8, weight: .bold))
                             .tracking(0.4)
@@ -139,6 +148,9 @@ private struct EntryRow: View {
         .help("\(entry.start.formatted(date: .omitted, time: .shortened)) – \(entry.end.formatted(date: .omitted, time: .shortened))")
         .contextMenu {
             Button("Start timer for this", action: onStart).disabled(!canStart)
+            if entry.isPending, let onEdit {
+                Button("Edit held entry…", action: onEdit)
+            }
             Divider()
             Button("Remove from this list", role: .destructive, action: onRemove)
         }

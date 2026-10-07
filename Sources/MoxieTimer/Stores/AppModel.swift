@@ -20,11 +20,20 @@ final class Clock {
 @MainActor @Observable
 final class WidgetUI {
     enum Tab { case focus, timer, recent }
-    enum Route { case settings, addEntry, tasks, capture }
+    enum Route { case settings, addEntry, tasks, capture, review }
+
+    /// How the entry editor should open: blank, prefilled with a time range (filling a gap), or editing a held entry.
+    struct EditorSeed {
+        var start: Date?
+        var end: Date?
+        var editId: String?
+        var returnTo: Route?
+    }
 
     private(set) var expanded = false
     var tab: Tab = .focus
     var route: Route?
+    var editorSeed: EditorSeed?
     /// Set by the panel controller; shows/hides the floating widget.
     @ObservationIgnored var onVisibilityRequest: ((Bool) -> Void)?
 
@@ -60,6 +69,7 @@ final class AppModel {
     let inbox: TaskInbox
     let focus: FocusStore
     let idle: IdleMonitor
+    let activity: ActivityWatcher
 
     private init() {
         settings = AppSettings()
@@ -69,5 +79,6 @@ final class AppModel {
         inbox = TaskInbox(settings: settings)
         focus = FocusStore(timer: timer, inbox: inbox)
         idle = IdleMonitor(timer: timer, focus: focus)
+        activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history)
     }
 }

@@ -29,6 +29,18 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - **Quick capture:** press **⌃⌥Space** anywhere to add a task straight to Moxie, assigned to you.
 - **Task done:** finish a task to log the time and, optionally, mark it complete in Moxie.
 
+### Time you can trust
+
+- **Hold for review (default):** stopping a timer keeps the entry on this Mac instead of sending it, so you can stop
+  now and pick the client/project later. At your review time (default 17:30) the widget opens **Review & send**: held
+  entries per day, **untracked gaps** within your work hours you can fill with one click, edit or delete any entry,
+  then send everything to Moxie at once. Turn it off in Settings to send each entry immediately.
+- **"Not tracking" reminder:** during your work hours, if you're active with no timer running, the pill turns amber
+  after 1 min, a notification arrives after 2 min, and a prompt appears in the middle of the screen after 5 min. Starting
+  from the prompt back-dates the timer to when you began. "Not working right now" pauses reminders for 30 minutes.
+- **Project suggestions:** while you track, the app learns which apps (and, with Accessibility permission, which window
+  titles) go with which client/project, then suggests them. Learned data stays in a local file; you can clear it in Settings.
+
 AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
 Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.
 

@@ -35,6 +35,18 @@ final class HistoryStore {
         persist()
     }
 
+    func update(_ entry: LoggedEntry) {
+        guard let index = entries.firstIndex(where: { $0.id == entry.id }) else { return }
+        entries[index] = entry
+        entries.sort { $0.start > $1.start }
+        persist()
+    }
+
+    /// Entries held for review, oldest first.
+    var pending: [LoggedEntry] {
+        entries.filter(\.isPending).sorted { $0.start < $1.start }
+    }
+
     func remove(_ entry: LoggedEntry) {
         entries.removeAll { $0.id == entry.id }
         persist()
