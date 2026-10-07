@@ -68,6 +68,9 @@ jobs:
           3. Open Settings in the widget and paste your Moxie API key and workspace base URL (Moxie → Custom API → Enable).
 
           Universal build: Apple Silicon + Intel, macOS 14 or later.
+
+          > **Unofficial:** Moxie Timer is an independent project, not affiliated with, endorsed or supported by Moxie (withmoxie.com).
+          > Provided "as is" without warranty; the authors accept no responsibility for its use.
           EOF
           )"
           fi

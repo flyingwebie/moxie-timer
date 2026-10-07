@@ -121,7 +121,7 @@ struct SettingsView: View {
                     .foregroundStyle(Theme.danger)
             }
 
-            Text("In Moxie open Custom API and choose Enable, then copy the API key and the workspace base URL shown there. The key is stored in your Mac's Keychain.")
+            Text("In Moxie open Custom API and choose Enable, then copy the API key and the workspace base URL shown there. The key is stored in your Mac's Keychain.\n\nUnofficial app — not affiliated with or endorsed by Moxie. Provided as is, without warranty; use at your own risk.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)

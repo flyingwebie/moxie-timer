@@ -1,10 +1,10 @@
-// Renders Support/AppIcon.icns from Support/moxie-mark.svg (the Moxie mark from withmoxie.com).
+// Renders Support/AppIcon.icns (and a preview PNG) from Support/AppIcon.svg.
 // Usage: swift scripts/make-icon.swift
 import AppKit
 
 let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
 let support = root.appending(path: "Support")
-guard let mark = NSImage(contentsOf: support.appending(path: "moxie-mark.svg")) else { fatalError("missing moxie-mark.svg") }
+guard let artwork = NSImage(contentsOf: support.appending(path: "AppIcon.svg")) else { fatalError("missing AppIcon.svg") }
 
 func render(_ size: Int) -> Data {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,
@@ -15,29 +15,13 @@ func render(_ size: Int) -> Data {
     NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
     let s = CGFloat(size) / 1024
 
-    // macOS icon grid: 824pt tile centred in a 1024pt canvas.
-    let tile = NSRect(x: 100 * s, y: 100 * s, width: 824 * s, height: 824 * s)
-    let shape = NSBezierPath(roundedRect: tile, xRadius: 185 * s, yRadius: 185 * s)
-
-    NSGraphicsContext.saveGraphicsState()
+    // Standard macOS icon drop shadow under the tile.
     let shadow = NSShadow()
-    shadow.shadowColor = NSColor.black.withAlphaComponent(0.28)
+    shadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
     shadow.shadowOffset = NSSize(width: 0, height: -10 * s)
     shadow.shadowBlurRadius = 24 * s
     shadow.set()
-    NSColor.white.setFill()
-    shape.fill()
-    NSGraphicsContext.restoreGraphicsState()
-
-    NSGradient(starting: .white, ending: NSColor(calibratedRed: 0.93, green: 0.91, blue: 0.98, alpha: 1))!
-        .draw(in: shape, angle: -90)
-
-    // Mark at ~64% of the tile width, optically centred.
-    let markWidth = 530 * s
-    let markHeight = markWidth * mark.size.height / mark.size.width
-    let markRect = NSRect(x: tile.midX - markWidth / 2 - 6 * s, y: tile.midY - markHeight / 2 + 4 * s,
-                          width: markWidth, height: markHeight)
-    mark.draw(in: markRect)
+    artwork.draw(in: NSRect(x: 0, y: 0, width: CGFloat(size), height: CGFloat(size)))
 
     NSGraphicsContext.restoreGraphicsState()
     return rep.representation(using: .png, properties: [:])!

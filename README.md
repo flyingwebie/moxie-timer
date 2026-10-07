@@ -5,6 +5,10 @@
 A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](https://www.withmoxie.com) through the
 [Moxie Public API](https://api-docs.withmoxie.com/reference/time-worked-create).
 
+> [!IMPORTANT]
+> **This is NOT an official Moxie product.** It's an independent, unofficial widget with no affiliation with or endorsement
+> from Moxie, and it comes with no warranty. The authors take no responsibility for its use. See the [Disclaimer](#disclaimer).
+
 - Floats above other windows on every Space (toggle in Settings). Drag it by the timer readout or the card header; the position is saved.
 - Timer: start/pause/stop, ±5/±15 min nudges, editable start time or duration (`45m`, `1.5h`, `1:30`).
 - Client → project → task → ticket pickers loaded live from Moxie, with search.
@@ -73,5 +77,14 @@ Installed copies offer the update automatically.
 
 ## Icon
 
-`Support/AppIcon.icns` is generated from `Support/moxie-mark.svg`, the Moxie mark taken from withmoxie.com, by running
-`swift scripts/make-icon.swift`. Moxie's name and logo belong to Moxie; this is an unofficial companion app.
+The app icon is original artwork (`Support/AppIcon.svg`). It doesn't use any Moxie logo or brand asset.
+Run `swift scripts/make-icon.swift` to rebuild `Support/AppIcon.icns` from it.
+
+## Disclaimer
+
+**Moxie Timer is an unofficial, independent project. It is not made, endorsed, sponsored or supported by Moxie
+(withmoxie.com) or its owners.** "Moxie" is a trademark of its owner and is used here only to describe what the app works with.
+
+This software is provided "as is", without warranty of any kind. The authors accept no responsibility or liability for
+any loss of data, incorrect or missing time entries, billing errors, or any other damage arising from its use.
+Use it at your own risk and check your time entries in Moxie.
