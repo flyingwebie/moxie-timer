@@ -26,6 +26,8 @@ final class TimerStore {
     private(set) var session: TimerSession? { didSet { persist() } }
     private(set) var isSaving = false
     var lastError: String?
+    /// Non-fatal information about the last save (e.g. Moxie ignored the billable setting).
+    var notice: String?
 
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let history: HistoryStore
@@ -124,17 +126,35 @@ final class TimerStore {
         let end = Date(timeIntervalSince1970: end.timeIntervalSince1970.rounded(.down))
         guard end > start else { throw LogError.invalidRange }
 
-        let request = TimeEntryRequest(
-            timerStart: start.formatted(.iso8601),
-            timerEnd: end.formatted(.iso8601),
-            clientName: client.name,
-            projectName: project.name,
-            deliverableName: draft.task?.name,
-            notes: draft.composedNotes,
-            userEmail: settings.userEmail.trimmingCharacters(in: .whitespaces)
-        )
-        let event = try await api.createTimeEntry(request)
-        let entry = LoggedEntry(id: UUID().uuidString, moxieId: event?.id, start: start, end: end, draft: draft)
+        func request(billable: Bool?) -> TimeEntryRequest {
+            TimeEntryRequest(
+                timerStart: start.formatted(.iso8601),
+                timerEnd: end.formatted(.iso8601),
+                clientName: client.name,
+                projectName: project.name,
+                deliverableName: draft.task?.name,
+                notes: draft.composedNotes,
+                userEmail: settings.userEmail.trimmingCharacters(in: .whitespaces),
+                billable: billable
+            )
+        }
+
+        notice = nil
+        let wanted = draft.isBillable
+        let event: TimerEvent?
+        do {
+            event = try await api.createTimeEntry(request(billable: wanted))
+        } catch MoxieAPI.APIError.http(400, _) {
+            // `billable` isn't in the documented schema; if Moxie rejects it, save the time without it.
+            event = try await api.createTimeEntry(request(billable: nil))
+            notice = "Moxie didn't accept the billable setting, so the entry was saved with Moxie's default."
+        }
+        if notice == nil, let stored = event?.billable, stored != wanted {
+            notice = "Moxie saved this entry as \(stored ? "billable" : "non-billable") — the API ignored the toggle."
+        }
+
+        let entry = LoggedEntry(id: UUID().uuidString, moxieId: event?.id, start: start, end: end, draft: draft,
+                                moxieBillable: event?.billable)
         history.add(entry)
         return entry
     }

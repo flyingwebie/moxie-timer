@@ -116,6 +116,28 @@ struct PillBar: View {
     }
 }
 
+/// Non-fatal message from the last save, e.g. Moxie ignoring the billable toggle.
+struct SaveNoticeBanner: View {
+    @Environment(TimerStore.self) private var timer
+
+    var body: some View {
+        if let notice = timer.notice {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "info.circle.fill").foregroundStyle(Theme.navy)
+                Text(notice).fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                Button { timer.notice = nil } label: { Image(systemName: "xmark") }.buttonStyle(.plain)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.ink)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 10).fill(Theme.navy.opacity(0.07)))
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+        }
+    }
+}
+
 /// The dropdown card under the pill.
 struct ExpandedCard: View {
     @Environment(WidgetUI.self) private var ui
@@ -130,6 +152,7 @@ struct ExpandedCard: View {
             } else {
                 VStack(spacing: 0) {
                     UpdateBanner()
+                    SaveNoticeBanner()
                     header
                     switch ui.tab {
                     case .timer: TimerTab()

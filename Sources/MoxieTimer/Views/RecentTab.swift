@@ -119,10 +119,18 @@ private struct EntryRow: View {
                 .buttonStyle(.plain)
                 .help("Start a new timer for this")
             } else {
-                Text(DurationFormat.clock(entry.duration))
-                    .font(.system(size: 13, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(Theme.ink)
-                    .padding(.top, 6)
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(DurationFormat.clock(entry.duration))
+                        .font(.system(size: 13, weight: .semibold).monospacedDigit())
+                        .foregroundStyle(Theme.ink)
+                    if !entry.isBillable {
+                        Text("NON-BILLABLE")
+                            .font(.system(size: 8, weight: .bold))
+                            .tracking(0.4)
+                            .foregroundStyle(Theme.muted)
+                    }
+                }
+                .padding(.top, 6)
             }
         }
         .padding(.vertical, 8)

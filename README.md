@@ -11,7 +11,7 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 
 - Floats above other windows on every Space (toggle in Settings). Drag it by the timer readout or the card header; the position is saved.
 - Timer: start/pause/stop, ±5/±15 min nudges, editable start time or duration (`45m`, `1.5h`, `1:30`).
-- Client → project → task → ticket pickers loaded live from Moxie, with search.
+- Client → project → task → ticket pickers loaded live from Moxie, with search, plus a Billable toggle.
 - Add a past block of time manually with the **+** button.
 - Recent: today/this-week totals and a log of entries sent from this Mac. Hover a row to start a timer for it again.
 - Menu bar item shows the running time, with start/pause/stop and show/hide.
@@ -48,7 +48,7 @@ The API key is stored in the macOS Keychain. Because the build is ad-hoc signed,
 
 | Moxie web widget | This widget | Why |
 | --- | --- | --- |
-| Billable toggle | — | `timeWorked/create` has no billable field |
+| Billable toggle | Sent as `billable` (not in the documented schema) | The app checks the saved entry Moxie returns and tells you if the toggle was ignored. If Moxie rejects the field, the entry is saved again without it |
 | Ticket link | Added to the entry's notes as `Ticket #123 …` | No ticket field on time entries |
 | Recent list / edit entry | Local log of entries sent from this Mac | The API can't list, edit or delete time entries |
 | Client logos | Initials | Not returned by `clients/list` |

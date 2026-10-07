@@ -91,11 +91,33 @@ struct EntryFields: View {
                 }
             }
 
+            if !labelled { Divider() }
+            billableRow
+
             if let error = catalog.lastError {
                 ErrorBanner(message: error) { catalog.lastError = nil }
                     .padding(.top, 6)
             }
         }
+    }
+
+    private var billableRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "dollarsign.circle")
+                .font(.system(size: 14))
+                .foregroundStyle(Theme.muted)
+                .frame(width: 20)
+            Text("Billable")
+                .font(.system(size: 13))
+                .foregroundStyle(Theme.ink)
+            Spacer()
+            Toggle("Billable", isOn: $draft.isBillable)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .tint(Theme.navy)
+                .controlSize(.small)
+        }
+        .padding(.vertical, labelled ? 4 : 10)
     }
 
     @ViewBuilder

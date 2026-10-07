@@ -64,10 +64,14 @@ struct TimeEntryRequest: Encodable {
     let deliverableName: String?
     let notes: String?
     let userEmail: String
+    /// Not in the documented request schema; Moxie's TimerEvent has a `billable` field, so we send it and
+    /// check the response to see whether it was applied.
+    let billable: Bool?
 }
 
 struct TimerEvent: Decodable {
     let id: String?
+    let billable: Bool?
 }
 
 // MARK: - Local models
@@ -85,6 +89,13 @@ struct EntryDraft: Codable, Hashable {
     var task: Ref?
     var ticket: Ref?
     var notes: String = ""
+    /// Optional so drafts saved by older versions still decode; `nil` means billable.
+    var billable: Bool? = true
+
+    var isBillable: Bool {
+        get { billable ?? true }
+        set { billable = newValue }
+    }
 
     mutating func setClient(_ newValue: Ref?) {
         guard newValue != client else { return }
@@ -111,7 +122,7 @@ struct EntryDraft: Codable, Hashable {
 
     /// Same client/project/task, fresh notes — used when starting again from a past entry.
     var reusable: EntryDraft {
-        EntryDraft(client: client, project: project, task: task, ticket: ticket, notes: "")
+        EntryDraft(client: client, project: project, task: task, ticket: ticket, notes: "", billable: billable)
     }
 }
 
@@ -122,8 +133,12 @@ struct LoggedEntry: Codable, Identifiable, Hashable {
     var start: Date
     var end: Date
     var draft: EntryDraft
+    /// What Moxie reported back for `billable`, when it reported anything.
+    var moxieBillable: Bool?
 
     var duration: TimeInterval { end.timeIntervalSince(start) }
+    /// Billable state as Moxie stored it, falling back to what was requested.
+    var isBillable: Bool { moxieBillable ?? draft.isBillable }
 }
 
 /// A running or paused timer. Elapsed time excludes pauses; the reported start time is
