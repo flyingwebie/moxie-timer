@@ -61,5 +61,10 @@ The app has to be somewhere it can write to, such as /Applications, and not open
 
 ## Releasing
 
-Push a tag (`git tag v1.0.1 && git push origin v1.0.1`), or run the **Release** workflow manually and enter a version.
-GitHub Actions builds a universal app and publishes `MoxieTimer-<version>.zip` (plus a SHA-256 file) as a GitHub release.
+```sh
+./scripts/release.sh 1.2.0
+```
+
+This starts the **Release** workflow on GitHub. It builds a universal app, creates tag `v1.2.0`, and publishes
+`MoxieTimer-1.2.0.zip` with a SHA-256 file. You can also run the workflow from the Actions tab or push a `v*` tag.
+Installed copies offer the update automatically.
