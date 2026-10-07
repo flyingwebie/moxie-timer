@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 1.0.1) — creates tag v<version>"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Select Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+
+      - name: Build universal app
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          BUILD_NUMBER: ${{ github.run_number }}
+        run: ./scripts/build-app.sh --universal
+
+      - name: Package
+        id: package
+        run: |
+          ZIP="MoxieTimer-${{ steps.version.outputs.version }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent build/MoxieTimer.app "$ZIP"
+          shasum -a 256 "$ZIP" > "$ZIP.sha256"
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          ZIP="${{ steps.package.outputs.zip }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ZIP" "$ZIP.sha256" --clobber
+          else
+            gh release create "$TAG" "$ZIP" "$ZIP.sha256" \
+              --target "${{ github.sha }}" \
+              --title "Moxie Timer $TAG" \
+              --generate-notes \
+              --notes "$(cat <<'EOF'
+          ## Install
+
+          1. Download `MoxieTimer-*.zip`, unzip it and move **MoxieTimer.app** to /Applications.
+          2. The app is ad-hoc signed (not notarized). On first launch, right-click it → **Open**, or run:
+             `xattr -dr com.apple.quarantine /Applications/MoxieTimer.app`
+          3. Open Settings in the widget and paste your Moxie API key and workspace base URL (Moxie → Custom API → Enable).
+
+          Universal build: Apple Silicon + Intel, macOS 14 or later.
+          EOF
+          )"
+          fi
