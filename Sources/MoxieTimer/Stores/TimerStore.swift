@@ -62,6 +62,12 @@ final class TimerStore {
         session = current
     }
 
+    func resume() {
+        guard var current = session, !current.isRunning else { return }
+        current.resume(at: .now)
+        session = current
+    }
+
     func adjust(by delta: TimeInterval) {
         guard var current = session else { return }
         let now = Date.now

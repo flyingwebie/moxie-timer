@@ -19,11 +19,11 @@ final class Clock {
 /// Which screen the expanded widget is showing.
 @MainActor @Observable
 final class WidgetUI {
-    enum Tab { case timer, recent }
-    enum Route { case settings, addEntry }
+    enum Tab { case focus, timer, recent }
+    enum Route { case settings, addEntry, tasks, capture }
 
     private(set) var expanded = false
-    var tab: Tab = .timer
+    var tab: Tab = .focus
     var route: Route?
     /// Set by the panel controller; shows/hides the floating widget.
     @ObservationIgnored var onVisibilityRequest: ((Bool) -> Void)?
@@ -56,11 +56,18 @@ final class AppModel {
     let ui = WidgetUI()
     let clock = Clock()
     let updater = Updater()
+    let ai = AIService()
+    let inbox: TaskInbox
+    let focus: FocusStore
+    let idle: IdleMonitor
 
     private init() {
         settings = AppSettings()
         history = HistoryStore()
         catalog = Catalog(settings: settings)
         timer = TimerStore(settings: settings, history: history)
+        inbox = TaskInbox(settings: settings)
+        focus = FocusStore(timer: timer, inbox: inbox)
+        idle = IdleMonitor(timer: timer, focus: focus)
     }
 }

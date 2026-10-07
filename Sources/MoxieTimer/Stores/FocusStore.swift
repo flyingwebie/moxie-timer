@@ -1,0 +1,351 @@
+import AppKit
+import Observation
+
+/// What the user has chosen to work on right now.
+struct FocusTarget: Codable, Equatable {
+    var name: String
+    var taskId: String?
+    var projectTypeId: String?
+    var clientName: String?
+    var projectName: String?
+    var due: String?
+    var firstStep: String = ""
+
+    var context: String {
+        [clientName, projectName].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+/// One focus block and the break that follows it.
+struct FocusBlock: Codable, Equatable {
+    enum Phase: String, Codable {
+        case warmup, focus, breakDue, onBreak, breakOver
+    }
+
+    var phase: Phase
+    /// Planned focus length, including the warm-up.
+    var length: TimeInterval
+    var startedAt: Date
+    var phaseEndsAt: Date
+    var breakLength: TimeInterval
+    var snoozed = false
+    var pausedAt: Date?
+
+    var isWorking: Bool { phase == .warmup || phase == .focus }
+
+    func remaining(at now: Date) -> TimeInterval {
+        max(0, phaseEndsAt.timeIntervalSince(pausedAt ?? now))
+    }
+
+    /// 0…1 progress through the current phase, for the ring.
+    func progress(at now: Date) -> Double {
+        let total: TimeInterval
+        switch phase {
+        case .warmup: total = FocusStore.warmupLength
+        case .focus: total = snoozed ? FocusStore.snoozeLength : length
+        case .onBreak: total = breakLength
+        case .breakDue, .breakOver: return 1
+        }
+        guard total > 0 else { return 1 }
+        return min(max(1 - remaining(at: now) / total, 0), 1)
+    }
+
+    mutating func shift(by delta: TimeInterval) {
+        startedAt += delta
+        phaseEndsAt += delta
+    }
+}
+
+/// Drives one-thing mode: warm-up → focus block → break (with one snooze) → back to work.
+/// Block length adapts: +5 min after a completed block, −5 after one abandoned before halfway.
+@MainActor @Observable
+final class FocusStore {
+    nonisolated static let warmupLength: TimeInterval = 5 * 60
+    nonisolated static let snoozeLength: TimeInterval = 5 * 60
+    static let presetMinutes = [15, 25, 45, 90]
+
+    private struct Persisted: Codable {
+        var target: FocusTarget?
+        var block: FocusBlock?
+        var suggestedMinutes: Int
+    }
+
+    var target: FocusTarget? { didSet { persist() } }
+    private(set) var block: FocusBlock? {
+        didSet {
+            persist()
+            if oldValue?.phase != block?.phase || (oldValue == nil) != (block == nil) { onPhaseChange?() }
+        }
+    }
+    private(set) var suggestedMinutes: Int { didSet { persist() } }
+    var warmupEnabled: Bool {
+        didSet { UserDefaults.standard.set(warmupEnabled, forKey: "focusWarmup") }
+    }
+
+    /// Short-lived messages for the Focus tab.
+    var banner: String?
+    var pickReason: String?
+    var lastError: String?
+    private(set) var isFinishing = false
+
+    @ObservationIgnored var onPhaseChange: (() -> Void)?
+    @ObservationIgnored private let timer: TimerStore
+    @ObservationIgnored private let inbox: TaskInbox
+    @ObservationIgnored private var ticker: Timer?
+    @ObservationIgnored private let storageKey = "focusState"
+
+    init(timer: TimerStore, inbox: TaskInbox) {
+        self.timer = timer
+        self.inbox = inbox
+        warmupEnabled = UserDefaults.standard.object(forKey: "focusWarmup") as? Bool ?? true
+        if let data = UserDefaults.standard.data(forKey: storageKey),
+           let state = try? JSONDecoder().decode(Persisted.self, from: data) {
+            target = state.target
+            block = state.block
+            suggestedMinutes = state.suggestedMinutes
+        } else {
+            suggestedMinutes = 25
+        }
+
+        let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.tick() }
+        }
+        RunLoop.main.add(ticker, forMode: .common)
+        self.ticker = ticker
+    }
+
+    var needsOverlay: Bool {
+        guard let phase = block?.phase else { return false }
+        return phase == .breakDue || phase == .onBreak || phase == .breakOver
+    }
+
+    var isPaused: Bool { block?.pausedAt != nil }
+
+    // MARK: Choosing what to work on
+
+    /// Switches focus to a Moxie task. Any running time is saved first so it isn't misattributed.
+    func select(_ task: MoxieTask) async {
+        guard await saveRunningTimeBeforeSwitching() else { return }
+        target = FocusTarget(
+            name: task.name, taskId: task.id, projectTypeId: task.projectTypeId,
+            clientName: task.client?.name, projectName: task.project?.name, due: task.dueDate
+        )
+        var draft = timer.draft
+        draft.client = task.client.flatMap { client in client.name.map { Ref(id: client.id, name: $0) } }
+        draft.project = task.project.flatMap { project in project.name.map { Ref(id: project.id, name: $0) } }
+        draft.task = Ref(id: task.id, name: task.name)
+        draft.ticket = nil
+        draft.notes = ""
+        timer.draft = draft
+        pickReason = nil
+    }
+
+    /// Focus on something that isn't a Moxie task. Client/project are picked in the Timer tab.
+    func select(freeform name: String) async {
+        guard await saveRunningTimeBeforeSwitching() else { return }
+        target = FocusTarget(name: name)
+        timer.draft.task = nil
+        timer.draft.notes = name
+        pickReason = nil
+    }
+
+    func clearTarget() {
+        guard block == nil else { return }
+        target = nil
+        pickReason = nil
+    }
+
+    private func saveRunningTimeBeforeSwitching() async -> Bool {
+        guard timer.session != nil else { return true }
+        guard timer.draft.client != nil, timer.draft.project != nil else {
+            // Nothing to save against yet — the running time simply carries over to the new task.
+            return true
+        }
+        let previous = timer.draft.task?.name ?? timer.draft.project?.name ?? "previous work"
+        let elapsed = timer.session?.elapsed(at: .now) ?? 0
+        block = nil
+        await timer.stopAndSave()
+        if let error = timer.lastError {
+            lastError = "Couldn't save the previous time: \(error)"
+            return false
+        }
+        banner = "Saved \(DurationFormat.short(elapsed)) on “\(previous)” to Moxie before switching."
+        return true
+    }
+
+    // MARK: Blocks
+
+    func startBlock(minutes: Int, warmup: Bool? = nil) {
+        let length = TimeInterval(max(minutes, 5) * 60)
+        let now = Date.now
+        let useWarmup = (warmup ?? warmupEnabled) && length > Self.warmupLength
+        if timer.session == nil { timer.start() } else { timer.resume() }
+        block = FocusBlock(
+            phase: useWarmup ? .warmup : .focus,
+            length: length,
+            startedAt: now,
+            phaseEndsAt: now.addingTimeInterval(useWarmup ? Self.warmupLength : length),
+            breakLength: Self.breakLength(for: length)
+        )
+        banner = nil
+    }
+
+    func pauseBlock() {
+        guard var current = block, current.pausedAt == nil, current.isWorking else { return }
+        current.pausedAt = .now
+        block = current
+        timer.pause()
+    }
+
+    func resumeBlock() {
+        guard var current = block, let pausedAt = current.pausedAt else { return }
+        current.shift(by: Date.now.timeIntervalSince(pausedAt))
+        current.pausedAt = nil
+        block = current
+        timer.resume()
+    }
+
+    /// Stops the block without finishing the task. The tracked time stays in the Timer tab.
+    func stopBlock() {
+        guard let current = block else { return }
+        let worked = (current.pausedAt ?? .now).timeIntervalSince(current.startedAt)
+        if current.isWorking, !current.snoozed, worked < current.length / 2 {
+            adapt(completed: false, length: current.length)
+        }
+        block = nil
+        timer.pause()
+    }
+
+    /// Ends the task: saves the time to Moxie and optionally marks the task complete.
+    func finish(markComplete: Bool) async {
+        guard !isFinishing else { return }
+        isFinishing = true
+        defer { isFinishing = false }
+        let finishedTarget = target
+        let focused = timer.session?.elapsed(at: .now) ?? 0
+        block = nil
+
+        if timer.session != nil {
+            await timer.stopAndSave()
+            if let error = timer.lastError {
+                lastError = error
+                return
+            }
+        }
+
+        var message = "Nice work — “\(finishedTarget?.name ?? "task")” done"
+        if focused >= 60 { message += " after \(DurationFormat.short(focused)) of focus" }
+        message += "."
+        if markComplete, let taskId = finishedTarget?.taskId {
+            let task = inbox.tasks.first { $0.id == taskId }
+                ?? MoxieTask(id: taskId, name: finishedTarget?.name ?? "", projectId: nil, status: nil, parentTaskId: nil,
+                             projectTypeId: finishedTarget?.projectTypeId)
+            do {
+                let confirmed = try await inbox.markComplete(task)
+                message += confirmed ? " Marked complete in Moxie ✓" : " Moxie didn't confirm the status change — check the task."
+            } catch {
+                lastError = "Time saved, but marking the task complete failed: \(error.localizedDescription)"
+            }
+        }
+        target = nil
+        banner = message
+        NSSound(named: "Hero")?.play()
+    }
+
+    // MARK: Breaks
+
+    func startBreak() {
+        guard var current = block else { return }
+        timer.pause()
+        current.phase = .onBreak
+        current.phaseEndsAt = Date.now.addingTimeInterval(current.breakLength)
+        current.pausedAt = nil
+        block = current
+    }
+
+    /// One snooze per block; after that the break overlay stays.
+    func snoozeBreak() {
+        guard var current = block, current.phase == .breakDue, !current.snoozed else { return }
+        current.phase = .focus
+        current.snoozed = true
+        current.phaseEndsAt = Date.now.addingTimeInterval(Self.snoozeLength)
+        block = current
+    }
+
+    /// Emergency exit: keep working without a break; a fresh block starts right away.
+    func skipBreak() {
+        startBlock(minutes: suggestedMinutes, warmup: false)
+    }
+
+    func endBreakEarly() {
+        guard var current = block, current.phase == .onBreak else { return }
+        current.phase = .breakOver
+        current.phaseEndsAt = .distantFuture
+        block = current
+    }
+
+    func backToWork() {
+        startBlock(minutes: suggestedMinutes, warmup: false)
+    }
+
+    /// From the break-over screen: stop focusing for now and keep the time (paused) in the Timer tab.
+    func doneForNow() {
+        block = nil
+    }
+
+    // MARK: Idle
+
+    /// Time discarded by the idle prompt shouldn't count toward the block either.
+    func discardIdle(_ duration: TimeInterval) {
+        guard var current = block, current.isWorking else { return }
+        current.shift(by: duration)
+        block = current
+    }
+
+    // MARK: Clock
+
+    private func tick() {
+        guard var current = block else { return }
+        // The timer was stopped or discarded elsewhere (Timer tab, menu bar): the block ends with it.
+        if current.isWorking, timer.session == nil {
+            block = nil
+            return
+        }
+        guard current.pausedAt == nil, Date.now >= current.phaseEndsAt else { return }
+
+        switch current.phase {
+        case .warmup:
+            current.phase = .focus
+            current.phaseEndsAt = current.startedAt.addingTimeInterval(current.length)
+            banner = "Warm-up done — you're in. Keep going."
+            NSSound(named: "Tink")?.play()
+        case .focus:
+            if !current.snoozed { adapt(completed: true, length: current.length) }
+            current.phase = .breakDue
+            current.phaseEndsAt = .distantFuture
+            NSSound(named: "Glass")?.play()
+        case .onBreak:
+            current.phase = .breakOver
+            current.phaseEndsAt = .distantFuture
+            NSSound(named: "Glass")?.play()
+        case .breakDue, .breakOver:
+            return
+        }
+        block = current
+    }
+
+    private func adapt(completed: Bool, length: TimeInterval) {
+        let minutes = Int(length / 60)
+        suggestedMinutes = completed ? min(90, minutes + 5) : max(15, minutes - 5)
+    }
+
+    static func breakLength(for length: TimeInterval) -> TimeInterval {
+        max(3, (length / 60 / 5).rounded()) * 60
+    }
+
+    private func persist() {
+        let state = Persisted(target: target, block: block, suggestedMinutes: suggestedMinutes)
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        UserDefaults.standard.set(data, forKey: storageKey)
+    }
+}

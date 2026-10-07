@@ -55,6 +55,10 @@ final class PanelController {
             .environment(model.ui)
             .environment(model.clock)
             .environment(model.updater)
+            .environment(model.ai)
+            .environment(model.inbox)
+            .environment(model.focus)
+            .environment(model.idle)
 
         let host = NSHostingView(rootView: root)
         host.sizingOptions = []

@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v5
 
@@ -30,7 +30,11 @@ jobs:
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Select Xcode
-        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_16*.app | sort -V | tail -1)"
+        # Newest stable Xcode 26+ so Apple's on-device FoundationModels framework is available.
+        run: |
+          XCODE="$(ls -d /Applications/Xcode_2[6-9]*.app | grep -vi beta | sort -V | tail -1)"
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE"
 
       - name: Build universal app
         env:

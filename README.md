@@ -18,6 +18,20 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - A running timer survives quitting and relaunching.
 - Self-updates from GitHub Releases (see below).
 
+### Focus mode (built for ADHD brains)
+
+- **One thing at a time:** the Focus tab shows a single task and a big Start button. Your open Moxie tasks are ranked by overdue/due-soon, priority and age; **Pick for me** chooses one (with AI if enabled).
+- **Tiny first step:** write, or let AI suggest, a 2-minute first action. It stays visible while you work.
+- **Adaptive focus blocks:** each block starts with a 5-minute warm-up. The suggested length grows by 5 min after a block you finish and shrinks after one you stop before halfway (15–90 min).
+- **Break overlay:** when a block ends, a full-screen break screen appears. You can snooze it once (5 min); the timer pauses during the break.
+- **Always-visible task:** the floating pill shows the task name and the time left in the block.
+- **Idle detection:** come back after time away (or after the Mac slept) and choose to keep or discard that time.
+- **Quick capture:** press **⌃⌥Space** anywhere to add a task straight to Moxie, assigned to you.
+- **Task done:** finish a task to log the time and, optionally, mark it complete in Moxie.
+
+AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
+Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.
+
 ## Download
 
 Grab the latest `MoxieTimer-x.y.z.zip` from [Releases](https://github.com/flyingwebie/moxie-timer/releases/latest), unzip, and move it to /Applications.
@@ -26,7 +40,7 @@ The app is ad-hoc signed (not notarized): right-click → **Open** the first tim
 
 ## Build & run
 
-Requires macOS 14+ and Xcode 16+ (Swift 5.10+).
+Requires macOS 14+ and Xcode 16+ (Swift 5.10+). Build with Xcode 26+ to include Apple's on-device AI engine.
 
 ```sh
 ./scripts/build-app.sh            # → build/MoxieTimer.app
@@ -55,7 +69,9 @@ The API key is stored in the macOS Keychain. Because the build is ad-hoc signed,
 
 Pauses are left out of the logged time. An entry is saved as one block that ends when you stop, and its start is `end − tracked duration`.
 
-Endpoints used: `clients/list`, `projects/search`, `tasks/list`, `tickets/list`, `users/list`, `timeWorked/create`.
+Endpoints used: `clients/list`, `projects/search`, `tasks/list`, `tasks/create`, `tasks/update`, `taskStages/list`, `tickets/list`, `users/list`, `timeWorked/create`.
+
+Marking a task complete sets it to the project type's "complete" stage via `tasks/update`. That endpoint accepts any task fields but isn't fully documented, so the app checks Moxie's reply and tells you if the change wasn't confirmed.
 
 ## Updates
 

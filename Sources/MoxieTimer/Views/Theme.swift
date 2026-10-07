@@ -10,6 +10,8 @@ enum Theme {
     static let faint = Color.black.opacity(0.30)
     static let danger = Color(red: 0.74, green: 0.25, blue: 0.20)
     static let running = Color(red: 0.20, green: 0.68, blue: 0.42)
+    static let warmup = Color(red: 0.20, green: 0.62, blue: 0.85)
+    static let onBreak = Color(red: 0.93, green: 0.55, blue: 0.20)
 
     static let avatarPalette: [Color] = [
         Color(red: 0.36, green: 0.45, blue: 0.80), Color(red: 0.85, green: 0.47, blue: 0.30),

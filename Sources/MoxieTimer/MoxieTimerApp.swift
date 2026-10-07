@@ -12,23 +12,45 @@ struct MoxieTimerApp: App {
                 .environment(model.timer)
                 .environment(model.ui)
                 .environment(model.updater)
+                .environment(model.focus)
         } label: {
             MenuBarLabel()
                 .environment(model.timer)
                 .environment(model.clock)
+                .environment(model.focus)
         }
     }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var panelController: PanelController?
+    private var breakOverlay: BreakOverlayController?
+    private var captureHotKey: HotKey?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
         MainActor.assumeIsolated {
             let model = AppModel.shared
-            panelController = PanelController(model: model)
+            let panel = PanelController(model: model)
+            panelController = panel
             if !model.settings.isConfigured { model.ui.expand(route: .settings) }
+
+            let overlay = BreakOverlayController(model: model)
+            breakOverlay = overlay
+            model.focus.onPhaseChange = { [weak overlay] in overlay?.sync() }
+            overlay.sync()
+
+            model.idle.onReturn = { [weak panel] in
+                panel?.setVisible(true)
+                model.ui.expand()
+            }
+
+            captureHotKey = HotKey { [weak panel] in
+                MainActor.assumeIsolated {
+                    panel?.setVisible(true)
+                    model.ui.expand(route: .capture)
+                }
+            }
         }
     }
 
@@ -42,8 +64,14 @@ private struct MenuBarLabel: View {
     @Environment(TimerStore.self) private var timer
     @Environment(Clock.self) private var clock
 
+    @Environment(FocusStore.self) private var focus
+
     var body: some View {
-        if let session = timer.session {
+        if let block = focus.block, block.isWorking {
+            let remaining = Int(block.remaining(at: clock.now).rounded(.up))
+            Text("◎ " + String(format: "%d:%02d", remaining / 60, remaining % 60) + (block.pausedAt == nil ? "" : " ⏸"))
+                .monospacedDigit()
+        } else if let session = timer.session {
             Text(DurationFormat.clock(session.elapsed(at: clock.now)) + (session.isRunning ? "" : " ⏸"))
                 .monospacedDigit()
         } else {
@@ -84,6 +112,15 @@ private struct MenuBarMenu: View {
             Button("Start Timer") { timer.start() }
         }
         Divider()
+        Button("Capture Task…  (\(HotKey.captureDescription))") {
+            delegate.panelController?.setVisible(true)
+            ui.expand(route: .capture)
+        }
+        Button("Focus…") {
+            delegate.panelController?.setVisible(true)
+            ui.tab = .focus
+            ui.expand()
+        }
         Button("Add Time Entry…") {
             delegate.panelController?.setVisible(true)
             ui.expand(route: .addEntry)

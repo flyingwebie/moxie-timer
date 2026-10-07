@@ -18,11 +18,74 @@ struct MoxieProject: Codable, Identifiable, Hashable {
 }
 
 struct MoxieTask: Codable, Identifiable, Hashable {
+    struct Micro: Codable, Hashable {
+        let id: String
+        let name: String?
+    }
+
     let id: String
     let name: String
     let projectId: String?
     let status: String?
     let parentTaskId: String?
+    // Fields used by the focus inbox; all optional because Moxie omits empty ones.
+    var clientId: String? = nil
+    var projectTypeId: String? = nil
+    var statusId: String? = nil
+    var client: Micro? = nil
+    var project: Micro? = nil
+    var description: String? = nil
+    var priority: Int? = nil
+    var taskPriority: String? = nil
+    var assignedToList: [Int]? = nil
+    var startDate: String? = nil
+    var dueDate: String? = nil
+    var created: String? = nil
+    var completed: String? = nil
+    var archived: Bool? = nil
+    var isSubTask: Bool? = nil
+
+    var isOpen: Bool { (completed ?? "").isEmpty && archived != true }
+
+    /// `dueDate` is a plain `yyyy-MM-dd` date; interpreted in the local time zone.
+    var due: Date? {
+        guard let dueDate, !dueDate.isEmpty else { return nil }
+        return MoxieTask.dayFormatter.date(from: String(dueDate.prefix(10)))
+    }
+
+    /// 0 (none/low) … 4 (urgent).
+    var priorityRank: Int {
+        switch taskPriority {
+        case "Urgent": return 4
+        case "High": return 3
+        case "Medium": return 2
+        case "Normal": return 1
+        default: return min(max(priority ?? 0, 0), 4)
+        }
+    }
+
+    static let dayFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
+
+struct MoxieTaskStage: Decodable, Hashable {
+    let id: String
+    let label: String?
+    let complete: Bool?
+}
+
+/// `POST tasks/create` — resolves client and project by exact name.
+struct TaskCreateRequest: Encodable {
+    let name: String
+    let clientName: String?
+    let projectName: String?
+    let dueDate: String?
+    let assignedTo: [String]?
 }
 
 struct MoxieTicket: Codable, Identifiable, Hashable {

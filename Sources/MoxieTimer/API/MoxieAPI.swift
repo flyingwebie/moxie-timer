@@ -48,6 +48,31 @@ struct MoxieAPI: Sendable {
         ])
     }
 
+    /// Every task in the workspace (optionally limited to one client); the caller filters to open ones.
+    func allTasks(clientId: String? = nil) async throws -> [MoxieTask] {
+        var query = [URLQueryItem(name: "archived", value: "false")]
+        if let clientId { query.append(URLQueryItem(name: "clientId", value: clientId)) }
+        return try await get("public/action/tasks/list", query: query)
+    }
+
+    func createTask(_ task: TaskCreateRequest) async throws -> MoxieTask? {
+        let data = try await send("public/action/tasks/create", method: "POST", body: try JSONEncoder().encode(task))
+        return try? JSONDecoder().decode(MoxieTask.self, from: data)
+    }
+
+    /// `PATCH tasks/update` merges any subset of task fields into the task with `id`.
+    func updateTask(id: String, fields: [String: String]) async throws -> MoxieTask? {
+        var body = fields
+        body["id"] = id
+        let data = try await send("public/action/tasks/update", method: "PATCH", body: try JSONEncoder().encode(body))
+        return try? JSONDecoder().decode(MoxieTask.self, from: data)
+    }
+
+    func taskStages(projectTypeId: String?) async throws -> [MoxieTaskStage] {
+        let query = projectTypeId.map { [URLQueryItem(name: "projectTypeId", value: $0)] } ?? []
+        return try await get("public/action/taskStages/list", query: query)
+    }
+
     func users() async throws -> [MoxieUser] {
         try await get("public/action/users/list")
     }

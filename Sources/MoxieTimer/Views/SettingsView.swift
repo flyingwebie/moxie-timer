@@ -13,6 +13,7 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var settings = settings
 
+        ScrollView {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
                 if settings.isConfigured {
@@ -107,6 +108,14 @@ struct SettingsView: View {
 
             Divider()
 
+            FocusSettingsSection()
+
+            Divider()
+
+            AISettingsSection()
+
+            Divider()
+
             UpdatesSection()
 
             Divider()
@@ -127,6 +136,8 @@ struct SettingsView: View {
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
+        }
+        .frame(height: 580)
     }
 
     private func field<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

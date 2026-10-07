@@ -26,6 +26,7 @@ struct PillBar: View {
     @Environment(Clock.self) private var clock
     @Environment(WidgetUI.self) private var ui
     @Environment(Updater.self) private var updater
+    @Environment(FocusStore.self) private var focus
 
     var body: some View {
         HStack(spacing: 8) {
@@ -56,9 +57,22 @@ struct PillBar: View {
                     Circle()
                         .fill(dotColor)
                         .frame(width: 7, height: 7)
-                    Text(timeText)
-                        .font(.system(size: 14, weight: .semibold).monospacedDigit())
-                        .foregroundStyle(Theme.ink)
+                    if let block = focus.block, let name = focus.target?.name {
+                        // Focus mode: keep the task in view at all times.
+                        Text(name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 170, alignment: .leading)
+                        Text(blockText(block))
+                            .font(.system(size: 13, weight: .medium).monospacedDigit())
+                            .foregroundStyle(Theme.muted)
+                    } else {
+                        Text(timeText)
+                            .font(.system(size: 14, weight: .semibold).monospacedDigit())
+                            .foregroundStyle(Theme.ink)
+                    }
                 }
                 .padding(.leading, 12)
                 .padding(.vertical, 6)
@@ -67,7 +81,11 @@ struct PillBar: View {
 
                 if let session = timer.session {
                     pillButton(session.isRunning ? "pause.fill" : "play.fill", filled: false, help: session.isRunning ? "Pause" : "Resume") {
-                        timer.toggle()
+                        if focus.block?.isWorking == true {
+                            focus.isPaused ? focus.resumeBlock() : focus.pauseBlock()
+                        } else {
+                            timer.toggle()
+                        }
                     }
                     pillButton("stop.fill", filled: true, help: "Stop & save") {
                         if timer.draft.client == nil || timer.draft.project == nil {
@@ -79,6 +97,10 @@ struct PillBar: View {
                         }
                     }
                     .disabled(timer.isSaving)
+                } else if focus.target != nil {
+                    pillButton("play.fill", filled: true, help: "Start a focus block") {
+                        focus.startBlock(minutes: focus.suggestedMinutes)
+                    }
                 } else {
                     pillButton("play.fill", filled: true, help: "Start timer") { timer.start() }
                 }
@@ -97,8 +119,27 @@ struct PillBar: View {
     }
 
     private var dotColor: Color {
+        if let block = focus.block {
+            if block.pausedAt != nil { return Theme.muted }
+            switch block.phase {
+            case .warmup: return Theme.warmup
+            case .focus: return Theme.running
+            case .breakDue, .onBreak, .breakOver: return Theme.onBreak
+            }
+        }
         guard let session = timer.session else { return Theme.faint }
         return session.isRunning ? Theme.running : Theme.muted
+    }
+
+    private func blockText(_ block: FocusBlock) -> String {
+        let remaining = Int(block.remaining(at: clock.now).rounded(.up))
+        let clockText = String(format: "%d:%02d", remaining / 60, remaining % 60)
+        switch block.phase {
+        case .warmup: return "warm-up \(clockText)"
+        case .focus: return block.pausedAt == nil ? clockText : "paused"
+        case .onBreak: return "break \(clockText)"
+        case .breakDue, .breakOver: return "break"
+        }
     }
 
     private func pillButton(_ systemName: String, filled: Bool, help: String, action: @escaping () -> Void) -> some View {
@@ -149,12 +190,18 @@ struct ExpandedCard: View {
                 SettingsView()
             } else if ui.route == .addEntry {
                 ManualEntryView()
+            } else if ui.route == .tasks {
+                TaskListView()
+            } else if ui.route == .capture {
+                CaptureView()
             } else {
                 VStack(spacing: 0) {
                     UpdateBanner()
+                    IdleBanner()
                     SaveNoticeBanner()
                     header
                     switch ui.tab {
+                    case .focus: FocusTab()
                     case .timer: TimerTab()
                     case .recent: RecentTab()
                     }
@@ -171,6 +218,7 @@ struct ExpandedCard: View {
     private var header: some View {
         HStack(spacing: 6) {
             HStack(spacing: 2) {
+                tabButton("Focus", systemName: "scope", tab: .focus)
                 tabButton("Timer", systemName: "stopwatch", tab: .timer)
                 tabButton("Recent", systemName: "clock.arrow.circlepath", tab: .recent)
             }
@@ -193,9 +241,9 @@ struct ExpandedCard: View {
         let selected = ui.tab == tab
         return Button { ui.tab = tab } label: {
             Label(title, systemImage: systemName)
-                .font(.system(size: 13, weight: selected ? .semibold : .regular))
+                .font(.system(size: 12.5, weight: selected ? .semibold : .regular))
                 .foregroundStyle(selected ? Theme.ink : Theme.muted)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 9)
                 .frame(height: 28)
                 .background(RoundedRectangle(cornerRadius: 8).fill(selected ? .white : .clear)
                     .shadow(color: .black.opacity(selected ? 0.08 : 0), radius: 2, y: 1))
