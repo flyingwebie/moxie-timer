@@ -1,5 +1,7 @@
 # Moxie Timer
 
+<img src="Support/AppIcon-preview.png" width="128" alt="Moxie Timer icon">
+
 A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](https://www.withmoxie.com) through the
 [Moxie Public API](https://api-docs.withmoxie.com/reference/time-worked-create).
 
@@ -68,3 +70,8 @@ The app has to be somewhere it can write to, such as /Applications, and not open
 This starts the **Release** workflow on GitHub. It builds a universal app, creates tag `v1.2.0`, and publishes
 `MoxieTimer-1.2.0.zip` with a SHA-256 file. You can also run the workflow from the Actions tab or push a `v*` tag.
 Installed copies offer the update automatically.
+
+## Icon
+
+`Support/AppIcon.icns` is generated from `Support/moxie-mark.svg`, the Moxie mark taken from withmoxie.com, by running
+`swift scripts/make-icon.swift`. Moxie's name and logo belong to Moxie; this is an unofficial companion app.
