@@ -54,6 +54,7 @@ final class PanelController {
             .environment(model.timer)
             .environment(model.ui)
             .environment(model.clock)
+            .environment(model.updater)
 
         let host = NSHostingView(rootView: root)
         host.sizingOptions = []

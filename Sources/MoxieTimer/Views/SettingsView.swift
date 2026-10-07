@@ -107,6 +107,10 @@ struct SettingsView: View {
 
             Divider()
 
+            UpdatesSection()
+
+            Divider()
+
             HStack {
                 Button("Hide widget") { ui.onVisibilityRequest?(false) }
                     .buttonStyle(ChipButtonStyle())

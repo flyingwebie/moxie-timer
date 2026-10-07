@@ -25,9 +25,21 @@ struct PillBar: View {
     @Environment(TimerStore.self) private var timer
     @Environment(Clock.self) private var clock
     @Environment(WidgetUI.self) private var ui
+    @Environment(Updater.self) private var updater
 
     var body: some View {
         HStack(spacing: 8) {
+            if let release = updater.latest {
+                Button { ui.expand() } label: {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white, Theme.running)
+                        .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                }
+                .buttonStyle(.plain)
+                .help("Moxie Timer \(release.version) is available")
+            }
+
             Button { ui.expand(route: .addEntry) } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 15, weight: .bold))
@@ -117,6 +129,7 @@ struct ExpandedCard: View {
                 ManualEntryView()
             } else {
                 VStack(spacing: 0) {
+                    UpdateBanner()
                     header
                     switch ui.tab {
                     case .timer: TimerTab()

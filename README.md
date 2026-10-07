@@ -10,6 +10,7 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - Recent: today/this-week totals and a log of entries sent from this Mac. Hover a row to start a timer for it again.
 - Menu bar item shows the running time, with start/pause/stop and show/hide.
 - A running timer survives quitting and relaunching.
+- Self-updates from GitHub Releases (see below).
 
 ## Download
 
@@ -49,6 +50,14 @@ The API key is stored in the macOS Keychain. Because the build is ad-hoc signed,
 Pauses are left out of the logged time. An entry is saved as one block that ends when you stop, and its start is `end − tracked duration`.
 
 Endpoints used: `clients/list`, `projects/search`, `tasks/list`, `tickets/list`, `users/list`, `timeWorked/create`.
+
+## Updates
+
+On launch and every 6 hours, the app checks this repo's latest GitHub release. If the release tag (`v1.2.0`) is newer
+than the installed version, a banner offers **Install & relaunch**. The app then downloads `MoxieTimer-<version>.zip`,
+checks it against the `.sha256` file, swaps the app bundle in place and reopens it. A running timer carries over.
+You can also check manually in Settings or from the menu bar, and turn automatic checks off.
+The app has to be somewhere it can write to, such as /Applications, and not opened straight from Downloads.
 
 ## Releasing
 

@@ -55,6 +55,7 @@ final class AppModel {
     let timer: TimerStore
     let ui = WidgetUI()
     let clock = Clock()
+    let updater = Updater()
 
     private init() {
         settings = AppSettings()

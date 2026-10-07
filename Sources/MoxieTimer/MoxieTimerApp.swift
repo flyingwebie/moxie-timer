@@ -11,6 +11,7 @@ struct MoxieTimerApp: App {
             MenuBarMenu(delegate: appDelegate)
                 .environment(model.timer)
                 .environment(model.ui)
+                .environment(model.updater)
         } label: {
             MenuBarLabel()
                 .environment(model.timer)
@@ -55,8 +56,16 @@ private struct MenuBarMenu: View {
     let delegate: AppDelegate
     @Environment(TimerStore.self) private var timer
     @Environment(WidgetUI.self) private var ui
+    @Environment(Updater.self) private var updater
 
     var body: some View {
+        if let release = updater.latest {
+            Button("Install Update \(release.version)…") {
+                delegate.panelController?.setVisible(true)
+                ui.expand()
+            }
+            Divider()
+        }
         if let session = timer.session {
             Button(session.isRunning ? "Pause" : "Resume") { timer.toggle() }
             Button("Stop & Save") {
@@ -86,6 +95,12 @@ private struct MenuBarMenu: View {
             delegate.panelController?.setVisible(true)
             delegate.panelController?.resetPosition()
         }
+        Button("Check for Updates…") {
+            delegate.panelController?.setVisible(true)
+            ui.expand(route: .settings)
+            Task { await updater.check(userInitiated: true) }
+        }
+        .disabled(updater.isBusy)
         Button("Settings…") {
             delegate.panelController?.setVisible(true)
             ui.expand(route: .settings)
