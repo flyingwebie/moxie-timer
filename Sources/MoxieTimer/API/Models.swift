@@ -73,6 +73,57 @@ struct MoxieTask: Codable, Identifiable, Hashable {
     }()
 }
 
+extension MoxieTask.Micro {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? container.decodeIfPresent(String.self, forKey: .id)) ?? ""
+        name = (try? container.decodeIfPresent(String.self, forKey: .name)) ?? nil
+    }
+}
+
+extension MoxieTask {
+    /// Tolerant decoding: only `id` is required. Moxie omits empty fields and some types vary between records,
+    /// so a field that's missing or the wrong type becomes nil instead of failing the whole task.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        func value<T: Decodable>(_ key: CodingKeys) -> T? { (try? c.decodeIfPresent(T.self, forKey: key)) ?? nil }
+        id = try c.decode(String.self, forKey: .id)
+        let rawName: String? = value(.name)
+        name = (rawName?.isEmpty == false) ? rawName! : "Untitled task"
+        projectId = value(.projectId)
+        status = value(.status)
+        parentTaskId = value(.parentTaskId)
+        clientId = value(.clientId)
+        projectTypeId = value(.projectTypeId)
+        statusId = value(.statusId)
+        client = value(.client)
+        project = value(.project)
+        description = value(.description)
+        priority = value(.priority)
+        taskPriority = value(.taskPriority)
+        assignedToList = value(.assignedToList)
+        startDate = value(.startDate)
+        dueDate = value(.dueDate)
+        created = value(.created)
+        completed = value(.completed)
+        archived = value(.archived)
+        isSubTask = value(.isSubTask)
+    }
+
+    /// Client as a picker reference, falling back to the top-level `clientId`.
+    var clientRef: Ref? {
+        guard let name = client?.name, !name.isEmpty else { return nil }
+        let id = (client?.id).flatMap { $0.isEmpty ? nil : $0 } ?? clientId
+        return id.map { Ref(id: $0, name: name) }
+    }
+
+    var projectRef: Ref? {
+        guard let name = project?.name, !name.isEmpty else { return nil }
+        let id = (project?.id).flatMap { $0.isEmpty ? nil : $0 } ?? projectId
+        return id.map { Ref(id: $0, name: name) }
+    }
+}
+
 struct MoxieTaskStage: Decodable, Hashable {
     let id: String
     let label: String?

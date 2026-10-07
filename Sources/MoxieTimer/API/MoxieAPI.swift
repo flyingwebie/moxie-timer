@@ -8,6 +8,7 @@ struct MoxieAPI: Sendable {
     enum APIError: LocalizedError {
         case http(Int, String)
         case invalidResponse
+        case unreadable(String, String)
 
         var errorDescription: String? {
             switch self {
@@ -18,6 +19,9 @@ struct MoxieAPI: Sendable {
                 return detail.isEmpty ? "Moxie returned HTTP \(code)." : "Moxie returned HTTP \(code): \(detail.prefix(240))"
             case .invalidResponse:
                 return "Unexpected response from Moxie."
+            case let .unreadable(path, detail):
+                let endpoint = path.replacingOccurrences(of: "public/action/", with: "")
+                return "Moxie sent data the app couldn't read (\(endpoint): \(detail))."
             }
         }
     }
@@ -25,23 +29,23 @@ struct MoxieAPI: Sendable {
     // MARK: Endpoints
 
     func clients() async throws -> [MoxieClient] {
-        try await get("public/action/clients/list")
+        try await getList("public/action/clients/list")
     }
 
     /// `query` must be the exact client name.
     func projects(clientName: String) async throws -> [MoxieProject] {
-        try await get("public/action/projects/search", query: [URLQueryItem(name: "query", value: clientName)])
+        try await getList("public/action/projects/search", query: [URLQueryItem(name: "query", value: clientName)])
     }
 
     func tasks(projectId: String) async throws -> [MoxieTask] {
-        try await get("public/action/tasks/list", query: [
+        try await getList("public/action/tasks/list", query: [
             URLQueryItem(name: "projectId", value: projectId),
             URLQueryItem(name: "archived", value: "false"),
         ])
     }
 
     func tickets(clientId: String) async throws -> [MoxieTicket] {
-        try await get("public/action/tickets/list", query: [
+        try await getList("public/action/tickets/list", query: [
             URLQueryItem(name: "clientId", value: clientId),
             URLQueryItem(name: "open", value: "true"),
             URLQueryItem(name: "archived", value: "false"),
@@ -52,7 +56,7 @@ struct MoxieAPI: Sendable {
     func allTasks(clientId: String? = nil) async throws -> [MoxieTask] {
         var query = [URLQueryItem(name: "archived", value: "false")]
         if let clientId { query.append(URLQueryItem(name: "clientId", value: clientId)) }
-        return try await get("public/action/tasks/list", query: query)
+        return try await getList("public/action/tasks/list", query: query)
     }
 
     func createTask(_ task: TaskCreateRequest) async throws -> MoxieTask? {
@@ -70,11 +74,11 @@ struct MoxieAPI: Sendable {
 
     func taskStages(projectTypeId: String?) async throws -> [MoxieTaskStage] {
         let query = projectTypeId.map { [URLQueryItem(name: "projectTypeId", value: $0)] } ?? []
-        return try await get("public/action/taskStages/list", query: query)
+        return try await getList("public/action/taskStages/list", query: query)
     }
 
     func users() async throws -> [MoxieUser] {
-        try await get("public/action/users/list")
+        try await getList("public/action/users/list")
     }
 
     @discardableResult
@@ -86,9 +90,51 @@ struct MoxieAPI: Sendable {
 
     // MARK: Transport
 
+    /// Decodes a JSON array item by item, skipping records that don't fit the model instead of failing the
+    /// whole list. Only throws when nothing at all could be read.
+    private func getList<Element: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> [Element] {
+        let data = try await send(path, query: query)
+        let list: LossyList<Element>
+        do {
+            list = try JSONDecoder().decode(LossyList<Element>.self, from: data)
+        } catch {
+            throw APIError.unreadable(path, Self.describe(error))
+        }
+        if list.elements.isEmpty, let failure = list.failures.first {
+            throw APIError.unreadable(path, Self.describe(failure))
+        }
+        if !list.failures.isEmpty {
+            NSLog("MoxieTimer: skipped %d unreadable item(s) from %@: %@", list.failures.count, path, Self.describe(list.failures[0]))
+        }
+        return list.elements
+    }
+
+    static func describe(_ error: Error) -> String {
+        func location(_ path: [CodingKey]) -> String {
+            let parts = path.map { $0.intValue.map { "item \($0 + 1)" } ?? $0.stringValue }
+            return parts.isEmpty ? "the response" : parts.joined(separator: " › ")
+        }
+        switch error as? DecodingError {
+        case let .keyNotFound(key, context)?:
+            return "missing “\(key.stringValue)” in \(location(context.codingPath))"
+        case let .typeMismatch(type, context)?:
+            return "unexpected type at \(location(context.codingPath)) (expected \(type))"
+        case let .valueNotFound(_, context)?:
+            return "empty value at \(location(context.codingPath))"
+        case let .dataCorrupted(context)?:
+            return "invalid JSON at \(location(context.codingPath))"
+        default:
+            return error.localizedDescription
+        }
+    }
+
     private func get<T: Decodable>(_ path: String, query: [URLQueryItem] = []) async throws -> T {
         let data = try await send(path, query: query)
-        return try JSONDecoder().decode(T.self, from: data)
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            throw APIError.unreadable(path, Self.describe(error))
+        }
     }
 
     private func send(_ path: String, method: String = "GET", query: [URLQueryItem] = [], body: Data? = nil) async throws -> Data {
@@ -113,5 +159,26 @@ struct MoxieAPI: Sendable {
             throw APIError.http(http.statusCode, String(decoding: data, as: UTF8.self))
         }
         return data
+    }
+}
+
+/// An array whose unreadable elements are collected instead of aborting the decode.
+private struct LossyList<Element: Decodable>: Decodable {
+    var elements: [Element] = []
+    var failures: [Error] = []
+
+    private struct Skip: Decodable {}
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        while !container.isAtEnd {
+            do {
+                elements.append(try container.decode(Element.self))
+            } catch {
+                failures.append(error)
+                // Step over the bad element; stop if it can't even be skipped (e.g. not an object).
+                guard (try? container.decode(Skip.self)) != nil else { break }
+            }
+        }
     }
 }

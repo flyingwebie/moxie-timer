@@ -131,8 +131,8 @@ final class FocusStore {
             clientName: task.client?.name, projectName: task.project?.name, due: task.dueDate
         )
         var draft = timer.draft
-        draft.client = task.client.flatMap { client in client.name.map { Ref(id: client.id, name: $0) } }
-        draft.project = task.project.flatMap { project in project.name.map { Ref(id: project.id, name: $0) } }
+        draft.client = task.clientRef
+        draft.project = task.projectRef
         draft.task = Ref(id: task.id, name: task.name)
         draft.ticket = nil
         draft.notes = ""

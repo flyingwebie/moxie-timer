@@ -98,7 +98,8 @@ struct FocusTab: View {
         if inbox.tasks.isEmpty { await inbox.refresh() }
         let candidates = Array(inbox.visibleTasks.prefix(12))
         guard let fallback = candidates.first else {
-            focus.lastError = inbox.lastError ?? "No open tasks found in Moxie. Add one with “New task”."
+            // A load error is already shown under the list; only explain the empty case here.
+            if inbox.lastError == nil { focus.lastError = "No open tasks found in Moxie. Add one with “New task”." }
             return
         }
         var chosen = fallback
