@@ -61,6 +61,7 @@ final class PanelController {
             .environment(model.idle)
             .environment(model.activity)
             .environment(model.stats)
+            .environment(model.pet)
 
         let host = NSHostingView(rootView: root)
         host.sizingOptions = []

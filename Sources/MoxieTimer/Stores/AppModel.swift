@@ -71,6 +71,7 @@ final class AppModel {
     let focus: FocusStore
     let idle: IdleMonitor
     let activity: ActivityWatcher
+    let pet: PetStore
 
     private init() {
         settings = AppSettings()
@@ -81,5 +82,6 @@ final class AppModel {
         focus = FocusStore(timer: timer, inbox: inbox, stats: stats)
         idle = IdleMonitor(timer: timer, focus: focus)
         activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history, stats: stats)
+        pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai)
     }
 }

@@ -89,7 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        MainActor.assumeIsolated { AppModel.shared.activity.learner.save() }
+        MainActor.assumeIsolated {
+            AppModel.shared.activity.learner.save()
+            AppModel.shared.pet.saveNow()
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

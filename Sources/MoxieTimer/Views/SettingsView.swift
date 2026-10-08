@@ -121,6 +121,10 @@ struct SettingsView: View {
 
             Divider()
 
+            PetSettingsSection()
+
+            Divider()
+
             AISettingsSection()
 
             Divider()

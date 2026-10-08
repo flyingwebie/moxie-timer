@@ -75,6 +75,20 @@ final class AppSettings {
         didSet { defaults.set(distractionKeywords, forKey: "distractionKeywords") }
     }
 
+    // MARK: Pet
+    var petEnabled: Bool { didSet { defaults.set(petEnabled, forKey: "petEnabled") } }
+    var petName: String { didSet { defaults.set(petName, forKey: "petName") } }
+    /// PetTone raw value.
+    var petTone: String { didSet { defaults.set(petTone, forKey: "petTone") } }
+    /// Free-text description of how the pet should talk (used by AI lines).
+    var petStyle: String { didSet { defaults.set(petStyle, forKey: "petStyle") } }
+    /// One per line; mixed into praise and drift lines.
+    var petPraiseLines: String { didSet { defaults.set(petPraiseLines, forKey: "petPraiseLines") } }
+    var petDriftLines: String { didSet { defaults.set(petDriftLines, forKey: "petDriftLines") } }
+    var petUseAI: Bool { didSet { defaults.set(petUseAI, forKey: "petUseAI") } }
+    /// PetAccessory raw value or "auto".
+    var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
+
     /// Status set on a ticket when you finish it from the Focus tab.
     var ticketDoneStatus: String {
         didSet { defaults.set(ticketDoneStatus, forKey: "ticketDoneStatus") }
@@ -120,6 +134,14 @@ final class AppSettings {
             ?? ["youtube", "reddit", "facebook", "instagram", "netflix", "tiktok", "twitch"]
         checkInMinutes = defaults.object(forKey: "checkInMinutes") as? Int ?? 20
         ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
+        petEnabled = defaults.object(forKey: "petEnabled") as? Bool ?? true
+        petName = defaults.string(forKey: "petName") ?? "Blip"
+        petTone = defaults.string(forKey: "petTone") ?? "warm"
+        petStyle = defaults.string(forKey: "petStyle") ?? ""
+        petPraiseLines = defaults.string(forKey: "petPraiseLines") ?? ""
+        petDriftLines = defaults.string(forKey: "petDriftLines") ?? ""
+        petUseAI = defaults.object(forKey: "petUseAI") as? Bool ?? false
+        petAccessory = defaults.string(forKey: "petAccessory") ?? "auto"
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

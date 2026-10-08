@@ -5,10 +5,14 @@ struct WidgetRoot: View {
     let onSize: (CGSize) -> Void
     @Environment(WidgetUI.self) private var ui
     @Environment(ActivityWatcher.self) private var activity
+    @Environment(AppSettings.self) private var rootSettings
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             PillBar()
+            if rootSettings.petEnabled {
+                PetBubble()
+            }
             if activity.checkInDue {
                 CheckInBubble()
             }
@@ -40,8 +44,13 @@ struct PillBar: View {
     private var drifting: Bool { activity.drift != .none }
     private var alerting: Bool { notTracking || drifting }
 
+    @Environment(AppSettings.self) private var pillSettings
+
     var body: some View {
         HStack(spacing: 8) {
+            if pillSettings.petEnabled {
+                PetPerch()
+            }
             if let release = updater.latest {
                 Button { ui.expand() } label: {
                     Image(systemName: "arrow.down.circle.fill")

@@ -31,6 +31,8 @@ final class NudgePromptController {
         let root = NudgePromptView { [weak self] in self?.hide() }
             .environment(model.activity)
             .environment(model.ui)
+            .environment(model.pet)
+            .environment(model.settings)
         let host = NSHostingView(rootView: root)
         panel.contentView = host
         let size = host.fittingSize
@@ -76,9 +78,7 @@ struct NudgePromptView: View {
         let minutes = max(1, Int((Date.now.timeIntervalSince(activity.driftSince ?? .now) / 60).rounded()))
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Image(systemName: "arrow.uturn.backward.circle.fill")
-                    .font(.system(size: 22))
-                    .foregroundStyle(Theme.onBreak)
+                PetView(size: 46, expression: .upset)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Back to “\(activity.currentTaskName)”?")
                         .font(.system(size: 17, weight: .bold))
