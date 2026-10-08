@@ -2,13 +2,13 @@ import Foundation
 
 /// Things the pet reacts to.
 enum PetEvent: String, CaseIterable {
-    case hello, warmupDone, blockDone, taskDone, focusMilestone, cameBack, checkInYes, levelUp
+    case hello, warmupDone, blockDone, taskDone, focusMilestone, cameBack, checkInYes, levelUp, newPet
     case driftStart, driftFirm, driftPrompt, notTracking
     case breakStart, breakOver, welcomeBack
 
     var isPositive: Bool {
         switch self {
-        case .hello, .warmupDone, .blockDone, .taskDone, .focusMilestone, .cameBack, .checkInYes, .levelUp, .breakOver, .welcomeBack:
+        case .hello, .warmupDone, .blockDone, .taskDone, .focusMilestone, .cameBack, .checkInYes, .levelUp, .newPet, .breakOver, .welcomeBack:
             return true
         case .driftStart, .driftFirm, .driftPrompt, .notTracking, .breakStart:
             return false
@@ -28,6 +28,7 @@ enum PetEvent: String, CaseIterable {
         case .cameBack: return "The user came back to work after drifting to a distraction. Praise the comeback."
         case .checkInYes: return "The user confirmed they are still on their task."
         case .levelUp: return "The pet just levelled up thanks to the user's focus."
+        case .newPet: return "The user's focus unlocked a new pet companion they can now choose. Celebrate it."
         case .driftStart: return "The user just switched to a distraction while their timer runs. Gentle nudge."
         case .driftFirm: return "The user has been on a distraction for 2 minutes. Be firmer."
         case .driftPrompt: return "The user has been on a distraction for 5 minutes. Insist they go back now."
@@ -70,6 +71,7 @@ enum PetPhrases {
             .cameBack: ["Welcome back to {task}! That comeback counts.", "Yay, you're back! Distractions: 0, you: 1."],
             .checkInYes: ["Love it. Keep going 💛", "Good! I'm right here."],
             .levelUp: ["I levelled up to {level}! Thanks to you ✨", "Level {level}! Look at my new look!"],
+            .newPet: ["You unlocked the {pet}! 🎉 Click me to meet them.", "A new friend: the {pet}! Swap me in my card if you like 🥹"],
             .driftStart: ["Psst… {app}? {task} misses you 👀", "Ooh, {app}. Quick peek, then back?"],
             .driftFirm: ["Two minutes on {app}… let's go back to {task}?", "I'm getting a bit sad here. Back to {task}? 🥺"],
             .driftPrompt: ["Okay, rescue mission: back to {task} now! 🚨", "Five minutes gone. Come back, I believe in you."],
@@ -87,6 +89,7 @@ enum PetPhrases {
             .cameBack: ["Good recovery. Back on {task}.", "Back on track. Keep it there."],
             .checkInYes: ["Confirmed. Carry on.", "Good. Eyes on {task}."],
             .levelUp: ["Level {level}. Earned it.", "Level {level} unlocked."],
+            .newPet: ["{pet} unlocked. Earned.", "New pet available: {pet}."],
             .driftStart: ["{app}. Not the task.", "Off task: {app}. Back to {task}."],
             .driftFirm: ["Two minutes on {app}. Return to {task}.", "Drifting. Close {app}."],
             .driftPrompt: ["Five minutes off task. Back to {task} now.", "Stop. Close {app}. {task}."],
@@ -97,7 +100,7 @@ enum PetPhrases {
         ],
         .quiet: [
             .hello: ["👋"], .warmupDone: ["✨"], .blockDone: ["🌟"], .taskDone: ["🎉"], .focusMilestone: ["💪"],
-            .cameBack: ["💛"], .checkInYes: ["👍"], .levelUp: ["⬆️ {level}"],
+            .cameBack: ["💛"], .checkInYes: ["👍"], .levelUp: ["⬆️ {level}"], .newPet: ["🎁 {pet}"],
             .driftStart: ["👀"], .driftFirm: ["🥺"], .driftPrompt: ["🚨 {task}"], .notTracking: ["⏱?"],
             .breakStart: ["🌿"], .breakOver: ["☀️"], .welcomeBack: ["👋"],
         ],

@@ -38,7 +38,9 @@ struct PetCritter: View {
     /// Accessories sit higher on pets with ears, leaves or antennas.
     private var lift: CGFloat {
         switch species {
-        case .cat: return 0.08
+        case .cat, .fox: return 0.08
+        case .owl: return 0.06
+        case .dragon: return 0.08
         case .robot: return 0.1
         case .plant: return 0.14
         case .dog, .ghost, .blob: return 0.02
@@ -95,6 +97,9 @@ struct PetCritter: View {
         case .plant: plant(s)
         case .ghost: ghost(s)
         case .robot: robot(s)
+        case .fox: fox(s)
+        case .owl: owl(s)
+        case .dragon: dragon(s)
         case .blob: EmptyView()
         }
     }
@@ -136,6 +141,123 @@ struct PetCritter: View {
                 .offset(x: side * s * 0.36, y: s * 0.14)
             }
             PetFace(expression: expression, time: time, size: s * 0.95).offset(y: s * 0.06)
+        }
+    }
+
+    // MARK: Fox
+
+    private func fox(_ s: CGFloat) -> some View {
+        let fur = Color(red: 0.95, green: 0.48, blue: 0.2)
+        let furDark = Color(red: 0.82, green: 0.33, blue: 0.12)
+        let earAngle: Double = drifting ? 40 : (cheerful ? -8 : 6)
+        let tail = sin(time * (drifting ? 5 : 1.6)) * (drifting ? 18 : 10)
+        return ZStack {
+            // Bushy tail with a white tip
+            ZStack(alignment: .top) {
+                Ellipse().fill(furDark).frame(width: s * 0.26, height: s * 0.5)
+                Ellipse().fill(.white).frame(width: s * 0.16, height: s * 0.14)
+            }
+            .rotationEffect(.degrees(40 + tail), anchor: .bottom)
+            .offset(x: s * 0.33, y: s * 0.02)
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                ZStack(alignment: .top) {
+                    Triangle().fill(fur)
+                    Triangle().fill(Theme.ink.opacity(0.75)).frame(height: s * 0.09).scaleEffect(x: 0.45, anchor: .top)
+                }
+                .frame(width: s * 0.26, height: s * 0.3)
+                .rotationEffect(.degrees(side * earAngle), anchor: .bottom)
+                .offset(x: side * s * 0.22, y: -s * 0.3)
+            }
+            Ellipse()
+                .fill(LinearGradient(colors: [fur, furDark], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.78, height: s * 0.66)
+                .offset(y: s * 0.06)
+            // White cheeks and muzzle
+            HStack(spacing: s * 0.04) {
+                Ellipse().fill(.white).frame(width: s * 0.3, height: s * 0.26)
+                Ellipse().fill(.white).frame(width: s * 0.3, height: s * 0.26)
+            }
+            .offset(y: s * 0.2)
+            PetFace(expression: expression, time: time, size: s * 0.92).offset(y: s * 0.06)
+            Ellipse().fill(Theme.ink).frame(width: s * 0.08, height: s * 0.055).offset(y: s * 0.16)
+        }
+    }
+
+    // MARK: Owl
+
+    private func owl(_ s: CGFloat) -> some View {
+        let feather = Color(red: 0.62, green: 0.45, blue: 0.32)
+        let featherDark = Color(red: 0.45, green: 0.3, blue: 0.2)
+        let flap = cheerful ? sin(time * 9) * 25 : (drifting ? 8 : 0)
+        let tuftAngle: Double = drifting ? 30 : 12
+        return ZStack {
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                Ellipse()
+                    .fill(featherDark)
+                    .frame(width: s * 0.2, height: s * 0.42)
+                    .rotationEffect(.degrees(side * (15 + flap)), anchor: .top)
+                    .offset(x: side * s * 0.36, y: s * 0.1)
+                Triangle()
+                    .fill(featherDark)
+                    .frame(width: s * 0.14, height: s * 0.2)
+                    .rotationEffect(.degrees(side * tuftAngle), anchor: .bottom)
+                    .offset(x: side * s * 0.2, y: -s * 0.33)
+            }
+            Ellipse()
+                .fill(LinearGradient(colors: [feather, featherDark], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.72, height: s * 0.78)
+                .offset(y: s * 0.04)
+            Ellipse().fill(Color(red: 0.93, green: 0.84, blue: 0.7)).frame(width: s * 0.42, height: s * 0.36).offset(y: s * 0.22)
+            // Big eye discs behind the face
+            HStack(spacing: s * 0.02) {
+                Circle().fill(Color(red: 0.98, green: 0.93, blue: 0.8)).frame(width: s * 0.3)
+                Circle().fill(Color(red: 0.98, green: 0.93, blue: 0.8)).frame(width: s * 0.3)
+            }
+            .offset(y: -s * 0.06)
+            PetFace(expression: expression, time: time, size: s * 1.05).offset(y: -s * 0.02)
+            Triangle()
+                .fill(Color(red: 0.95, green: 0.65, blue: 0.2))
+                .frame(width: s * 0.08, height: s * 0.08)
+                .rotationEffect(.degrees(180))
+                .offset(y: s * 0.07)
+        }
+    }
+
+    // MARK: Dragon
+
+    private func dragon(_ s: CGFloat) -> some View {
+        let scales = drifting ? Color(red: 0.55, green: 0.6, blue: 0.4) : Color(red: 0.35, green: 0.72, blue: 0.45)
+        let scalesDark = drifting ? Color(red: 0.4, green: 0.45, blue: 0.3) : Color(red: 0.2, green: 0.52, blue: 0.32)
+        let flap = sin(time * (cheerful ? 8 : 2)) * (cheerful ? 22 : 8)
+        return ZStack {
+            ForEach([-1.0, 1.0], id: \.self) { side in
+                Triangle()
+                    .fill(scalesDark.opacity(0.85))
+                    .frame(width: s * 0.32, height: s * 0.36)
+                    .rotationEffect(.degrees(side * (55 + flap)), anchor: .bottom)
+                    .offset(x: side * s * 0.3, y: -s * 0.08)
+                Triangle()
+                    .fill(Color(red: 0.98, green: 0.88, blue: 0.55))
+                    .frame(width: s * 0.09, height: s * 0.18)
+                    .rotationEffect(.degrees(side * 18), anchor: .bottom)
+                    .offset(x: side * s * 0.16, y: -s * 0.34)
+            }
+            // Spikes along the top
+            HStack(spacing: s * 0.02) {
+                ForEach(0..<3, id: \.self) { _ in Triangle().fill(scalesDark).frame(width: s * 0.08, height: s * 0.08) }
+            }
+            .offset(y: -s * 0.36)
+            Ellipse()
+                .fill(LinearGradient(colors: [scales, scalesDark], startPoint: .top, endPoint: .bottom))
+                .frame(width: s * 0.76, height: s * 0.68)
+                .offset(y: s * 0.06)
+            Ellipse().fill(Color(red: 0.95, green: 0.9, blue: 0.6)).frame(width: s * 0.4, height: s * 0.28).offset(y: s * 0.22)
+            PetFace(expression: expression, time: time, size: s * 0.92).offset(y: s * 0.04)
+            if expression == .upset {
+                Text("💨").font(.system(size: s * 0.2)).offset(x: s * 0.36, y: s * 0.16)
+            } else if expression == .celebrating {
+                Text("🔥").font(.system(size: s * 0.2)).offset(x: s * 0.36, y: s * 0.14)
+            }
         }
     }
 

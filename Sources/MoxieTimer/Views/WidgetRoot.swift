@@ -252,7 +252,7 @@ struct ExpandedCard: View {
             }
         }
         // Review gets more room for its timeline.
-        .frame(width: ui.route == .review ? 420 : 340)
+        .frame(width: ui.route == .review ? 440 : 380)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.white))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.border))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)

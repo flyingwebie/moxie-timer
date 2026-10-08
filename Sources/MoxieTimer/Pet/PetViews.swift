@@ -90,6 +90,28 @@ struct PetCard: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.muted)
             }
+            if let nextPet = pet.nextPet {
+                HStack(spacing: 8) {
+                    PetBlob(expression: .sleeping, mood: 80, accessory: .none, time: 0, species: nextPet, level: 6)
+                        .frame(width: 26, height: 26)
+                        .saturation(0)
+                        .opacity(0.6)
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Next pet: \(nextPet.title) · \(nextPet.requirement.label)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.ink)
+                        GeometryReader { proxy in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Theme.cream)
+                                Capsule().fill(Theme.onBreak).frame(width: max(5, proxy.size.width * pet.progress(toward: nextPet)))
+                            }
+                        }
+                        .frame(height: 6)
+                    }
+                }
+            } else {
+                Text("You've unlocked every pet 🏆").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.running)
+            }
 
             Text("Today: \(today.blocksCompleted) blocks · \(DurationFormat.short(today.focusSeconds)) focus · \(today.tasksDone) done · came back \(today.cameBack)×")
                 .font(.system(size: 11))
@@ -122,7 +144,7 @@ struct PetCard: View {
             }
         }
         .padding(16)
-        .frame(width: 280)
+        .frame(width: 330)
     }
 
     private func guide(_ icon: String, _ text: String, _ reward: String) -> some View {
@@ -224,26 +246,44 @@ struct PetSettingsSection: View {
     }
 }
 
-/// Grid of live previews to choose the pet.
+/// Grid of live previews to choose the pet. Locked pets show what earns them.
 struct SpeciesPicker: View {
     @Binding var selection: String
     var compact = false
+    @Environment(PetStore.self) private var pet
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 15)) { context in
             let time = context.date.timeIntervalSinceReferenceDate
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: compact ? 6 : 3), spacing: 6) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: compact ? 5 : 3), spacing: 6) {
                 ForEach(PetSpecies.allCases) { species in
-                    let selected = selection == species.rawValue
-                    Button { selection = species.rawValue } label: {
+                    let unlocked = pet.isUnlocked(species)
+                    let selected = pet.species == species
+                    Button { if unlocked { selection = species.rawValue } } label: {
                         VStack(spacing: 2) {
-                            PetBlob(expression: selected ? .happy : .idle, mood: 80, accessory: .none,
-                                    time: time, species: species, level: 6)
-                                .frame(width: compact ? 30 : 40, height: compact ? 30 : 40)
+                            ZStack(alignment: .bottomTrailing) {
+                                PetBlob(expression: selected ? .happy : (unlocked ? .idle : .sleeping), mood: 80, accessory: .none,
+                                        time: unlocked ? time : 0, species: species, level: 6)
+                                    .frame(width: compact ? 30 : 40, height: compact ? 30 : 40)
+                                    .saturation(unlocked ? 1 : 0)
+                                    .opacity(unlocked ? 1 : 0.45)
+                                if !unlocked {
+                                    Image(systemName: "lock.fill")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(.white)
+                                        .padding(3)
+                                        .background(Circle().fill(Theme.ink.opacity(0.7)))
+                                }
+                            }
                             if !compact {
                                 Text(species.title)
                                     .font(.system(size: 10, weight: selected ? .bold : .regular))
-                                    .foregroundStyle(selected ? Theme.ink : Theme.muted)
+                                    .foregroundStyle(unlocked ? (selected ? Theme.ink : Theme.muted) : Theme.faint)
+                                if !unlocked {
+                                    Text(species.requirement.label)
+                                        .font(.system(size: 9, weight: .semibold))
+                                        .foregroundStyle(Theme.onBreak)
+                                }
                             }
                         }
                         .frame(maxWidth: .infinity)
@@ -253,7 +293,7 @@ struct SpeciesPicker: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .help(species.title)
+                    .help(unlocked ? species.title : "\(species.title) — unlock at \(species.requirement.label) (\(Int(pet.progress(toward: species) * 100))% there)")
                 }
             }
         }

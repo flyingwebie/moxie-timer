@@ -3,7 +3,7 @@ import Observation
 
 /// Which creature the pet is. All share moods, levels and accessories.
 enum PetSpecies: String, CaseIterable, Identifiable {
-    case blob, cat, dog, plant, ghost, robot
+    case blob, cat, dog, plant, ghost, robot, fox, owl, dragon
     var id: String { rawValue }
 
     var title: String {
@@ -14,6 +14,36 @@ enum PetSpecies: String, CaseIterable, Identifiable {
         case .plant: return "Plant"
         case .ghost: return "Ghost"
         case .robot: return "Robot"
+        case .fox: return "Fox"
+        case .owl: return "Owl"
+        case .dragon: return "Dragon"
+        }
+    }
+
+    enum Requirement: Equatable {
+        case free, level(Int), streak(Int)
+
+        var label: String {
+            switch self {
+            case .free: return "Free"
+            case let .level(n): return "Level \(n)"
+            case let .streak(n): return "🔥 \(n)-day streak"
+            }
+        }
+    }
+
+    /// How each pet is earned. Streaks count your best streak ever, so missing a day never takes a pet away.
+    var requirement: Requirement {
+        switch self {
+        case .blob: return .free
+        case .cat: return .level(2)
+        case .dog: return .streak(2)
+        case .plant: return .level(3)
+        case .ghost: return .streak(3)
+        case .robot: return .level(5)
+        case .fox: return .level(7)
+        case .owl: return .streak(5)
+        case .dragon: return .level(10)
         }
     }
 }
@@ -52,6 +82,9 @@ final class PetStore {
         var saidHello = false
         /// Optional so state saved by older versions still decodes. Set once past stats are counted as XP.
         var seeded: Bool?
+        /// Pets earned so far (raw values). Nil in state from older versions.
+        var unlocked: [String]?
+        var bestStreak: Int?
     }
 
     private struct Snapshot {
@@ -77,7 +110,50 @@ final class PetStore {
     var nextUnlock: PetAccessory? { PetAccessory.allCases.first { $0.unlockLevel > level } }
     var unlocked: [PetAccessory] { PetAccessory.allCases.filter { $0.unlockLevel <= level } }
 
-    var species: PetSpecies { PetSpecies(rawValue: settings.petSpecies) ?? .blob }
+    var species: PetSpecies {
+        let chosen = PetSpecies(rawValue: settings.petSpecies) ?? .blob
+        return unlockedSpecies.contains(chosen) ? chosen : .blob
+    }
+
+    private(set) var unlockedSpecies: Set<PetSpecies> = [.blob]
+    private(set) var bestStreak = 0
+    /// Last pet unlocked, for the celebration line.
+    @ObservationIgnored private var newlyUnlocked: PetSpecies?
+
+    func isUnlocked(_ species: PetSpecies) -> Bool { unlockedSpecies.contains(species) }
+
+    /// 0…1 toward a locked pet's requirement.
+    func progress(toward species: PetSpecies) -> Double {
+        switch species.requirement {
+        case .free: return 1
+        case let .level(n):
+            return min(1, xp / max(1, Self.xp(forLevel: n)))
+        case let .streak(n):
+            return min(1, Double(max(bestStreak, stats.streak())) / Double(n))
+        }
+    }
+
+    private func meets(_ requirement: PetSpecies.Requirement) -> Bool {
+        switch requirement {
+        case .free: return true
+        case let .level(n): return level >= n
+        case let .streak(n): return max(bestStreak, stats.streak()) >= n
+        }
+    }
+
+    /// Unlocks every pet whose requirement is met. Returns the ones that are new.
+    @discardableResult
+    private func checkUnlocks() -> [PetSpecies] {
+        bestStreak = max(bestStreak, stats.streak())
+        let fresh = PetSpecies.allCases.filter { !unlockedSpecies.contains($0) && meets($0.requirement) }
+        guard !fresh.isEmpty else { return [] }
+        unlockedSpecies.formUnion(fresh)
+        save()
+        return fresh
+    }
+
+    /// The next pet still to earn, for the card.
+    var nextPet: PetSpecies? { PetSpecies.allCases.first { !unlockedSpecies.contains($0) } }
 
     /// What it's wearing: the chosen accessory, or the best unlocked one on "auto".
     var accessory: PetAccessory {
@@ -123,8 +199,16 @@ final class PetStore {
             // XP used to count only what happened after the pet arrived; include earlier focus once.
             xp = max(xp, Self.xp(fromHistory: stats))
             state.seeded = true
-            save()
         }
+        bestStreak = state.bestStreak ?? 0
+        if let saved = state.unlocked {
+            unlockedSpecies = Set(saved.compactMap(PetSpecies.init(rawValue:))).union([.blob])
+        } else {
+            // First run with unlocks: keep whichever pet is already chosen, so nobody loses theirs.
+            unlockedSpecies = [.blob, PetSpecies(rawValue: settings.petSpecies) ?? .blob]
+        }
+        checkUnlocks()
+        save()
 
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -228,6 +312,10 @@ final class PetStore {
         }
 
         if level > last.level { events.append(.levelUp) }
+        if let pet = checkUnlocks().last {
+            newlyUnlocked = pet
+            events.append(.newPet)
+        }
         // Show the most important reaction of this tick.
         if let event = events.max(by: { priority($0) < priority($1) }) { say(event) }
 
@@ -241,6 +329,7 @@ final class PetStore {
 
     private func priority(_ event: PetEvent) -> Int {
         switch event {
+        case .newPet: return 11
         case .levelUp: return 10
         case .taskDone: return 9
         case .driftPrompt: return 8
@@ -291,7 +380,7 @@ final class PetStore {
     func say(_ event: PetEvent) {
         guard !isInCall() else { return }
         let now = Date.now
-        let important: Set<PetEvent> = [.taskDone, .levelUp, .blockDone, .driftFirm, .driftPrompt, .cameBack]
+        let important: Set<PetEvent> = [.taskDone, .levelUp, .newPet, .blockDone, .driftFirm, .driftPrompt, .cameBack]
         // Don't chatter: minor positive lines wait if something was said recently.
         if event.isPositive, !important.contains(event), now.timeIntervalSince(lastLineAt) < 20 { return }
         if settings.petTone == PetTone.quiet.rawValue, !important.contains(event), !event.isDrift { return }
@@ -303,11 +392,11 @@ final class PetStore {
         lastLineAt = now
         lineUntil = now.addingTimeInterval(event.isDrift ? 3600 : (important.contains(event) ? 9 : 7))
         if event.isPositive {
-            let celebrate = event == .taskDone || event == .levelUp || event == .blockDone
+            let celebrate = event == .taskDone || event == .levelUp || event == .newPet || event == .blockDone
             transient = (celebrate ? .celebrating : .happy, now.addingTimeInterval(celebrate ? 5 : 3))
         }
         updateExpression(now: now)
-        if event == .taskDone || event == .levelUp { NSSound(named: "Funk")?.play() }
+        if event == .taskDone || event == .levelUp || event == .newPet { NSSound(named: "Funk")?.play() }
 
         if settings.petUseAI, ai.hasEnabledEngine, important.contains(event) || event == .hello || event == .notTracking,
            now.timeIntervalSince(lastAIAt) >= 60 {
@@ -334,6 +423,7 @@ final class PetStore {
             .replacingOccurrences(of: "{app}", with: activity.driftLabel ?? "that")
             .replacingOccurrences(of: "{level}", with: "\(level)")
             .replacingOccurrences(of: "{streak}", with: "\(stats.streak())")
+            .replacingOccurrences(of: "{pet}", with: newlyUnlocked?.title ?? "a new pet")
     }
 
     private func writeWithAI(_ event: PetEvent, replacing placeholder: String) async {
@@ -381,6 +471,8 @@ final class PetStore {
         lastSave = .now
         state.mood = mood
         state.xp = xp
+        state.unlocked = unlockedSpecies.map(\.rawValue).sorted()
+        state.bestStreak = bestStreak
         if let data = try? JSONEncoder().encode(state) { UserDefaults.standard.set(data, forKey: storageKey) }
     }
 
