@@ -9,7 +9,7 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 > **This is NOT an official Moxie product.** It's an independent, unofficial widget with no affiliation with or endorsement
 > from Moxie, and it comes with no warranty. The authors take no responsibility for its use. See the [Disclaimer](#disclaimer).
 
-- Floats above other windows on every Space (toggle in Settings). Drag it by the timer readout or the card header; the position is saved.
+- Floats above other windows on every Space (toggle in Settings). Drag it by the timer readout or the card header; the position is saved. Clicking outside the open card closes it (can be turned off).
 - Timer: start/pause/stop, ±5/±15 min nudges, editable start time or duration (`45m`, `1.5h`, `1:30`).
 - Client → project → task → ticket pickers loaded live from Moxie, with search, plus a Billable toggle.
 - Add a past block of time manually with the **+** button.

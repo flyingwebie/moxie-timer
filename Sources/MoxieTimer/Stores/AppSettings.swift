@@ -28,6 +28,11 @@ final class AppSettings {
         didSet { defaults.set(showOnAllSpaces, forKey: "showOnAllSpaces"); onWindowPreferencesChange?() }
     }
 
+    /// Collapse the open card when clicking anywhere outside the widget.
+    var closeOnOutsideClick: Bool {
+        didSet { defaults.set(closeOnOutsideClick, forKey: "closeOnOutsideClick") }
+    }
+
     /// Keep entries on this Mac until the end-of-day review instead of sending each one immediately.
     var holdForReview: Bool {
         didSet { defaults.set(holdForReview, forKey: "holdForReview") }
@@ -76,6 +81,7 @@ final class AppSettings {
         baseURL = defaults.string(forKey: "apiBaseURL") ?? ""
         keepOnTop = defaults.object(forKey: "keepOnTop") as? Bool ?? true
         showOnAllSpaces = defaults.object(forKey: "showOnAllSpaces") as? Bool ?? true
+        closeOnOutsideClick = defaults.object(forKey: "closeOnOutsideClick") as? Bool ?? true
         holdForReview = defaults.object(forKey: "holdForReview") as? Bool ?? true
         reviewMinutes = defaults.object(forKey: "reviewMinutes") as? Int ?? 17 * 60 + 30
         trackingReminders = defaults.object(forKey: "trackingReminders") as? Bool ?? true

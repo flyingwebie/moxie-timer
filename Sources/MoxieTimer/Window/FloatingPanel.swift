@@ -71,6 +71,20 @@ final class PanelController {
         applyPreferences()
         layout()
         panel.orderFrontRegardless()
+
+        // Clicks that go to other apps (desktop, Finder, browser…) close the open card, like a popover.
+        // Global mouse monitors don't need Accessibility permission; clicks in our own windows aren't reported here.
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.handleOutsideClick() }
+        }
+    }
+
+    private var outsideClickMonitor: Any?
+
+    private func handleOutsideClick() {
+        guard model.settings.closeOnOutsideClick, model.ui.expanded, panel.isVisible,
+              !panel.frame.contains(NSEvent.mouseLocation) else { return }
+        model.ui.collapse()
     }
 
     var isVisible: Bool { panel.isVisible }

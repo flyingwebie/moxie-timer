@@ -99,6 +99,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Keep widget above other windows", isOn: $settings.keepOnTop)
                 Toggle("Show on every Space & full-screen app", isOn: $settings.showOnAllSpaces)
+                Toggle("Close the card when I click outside it", isOn: $settings.closeOnOutsideClick)
                 Toggle("Open at login", isOn: $settings.launchAtLogin)
             }
             .toggleStyle(.switch)
