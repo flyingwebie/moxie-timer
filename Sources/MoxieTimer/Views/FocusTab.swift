@@ -3,6 +3,7 @@ import SwiftUI
 /// One-thing mode: choose a single task, give it a tiny first step, and focus in adaptive blocks.
 struct FocusTab: View {
     @Environment(FocusStore.self) private var focus
+    @Environment(AppSettings.self) private var settings
     @Environment(TaskInbox.self) private var inbox
     @Environment(AIService.self) private var ai
     @Environment(TimerStore.self) private var timer
@@ -241,7 +242,7 @@ struct FocusTab: View {
             .buttonStyle(PrimaryButtonStyle())
             .keyboardShortcut(.defaultAction)
 
-            Button { Task { await focus.finish(markComplete: true) } } label: {
+            Button { Task { await focus.finish(closeInMoxie: closesInMoxie(target)) } } label: {
                 Label(doneTitle(target), systemImage: "checkmark.circle").frame(maxWidth: .infinity)
             }
             .buttonStyle(ChipButtonStyle())
@@ -250,17 +251,22 @@ struct FocusTab: View {
         }
     }
 
+    /// Only when the user opted in, and only for real Moxie tasks/tickets.
+    private func closesInMoxie(_ target: FocusTarget) -> Bool {
+        settings.completeInMoxie && (target.taskId != nil || target.ticketId != nil)
+    }
+
     private func doneTitle(_ target: FocusTarget) -> String {
-        if target.ticketId != nil { return "Close ticket" }
-        if target.taskId != nil { return "Mark task complete" }
-        return "Done ✓"
+        guard closesInMoxie(target) else { return "Finish" }
+        return target.ticketId != nil ? "Finish & close ticket" : "Finish & complete"
     }
 
     private func doneHelp(_ target: FocusTarget) -> String {
-        let time = timer.session != nil ? "Saves the running time, then " : ""
-        if target.ticketId != nil { return time + "sets the ticket's status in Moxie (Settings → status for finished tickets)." }
-        if target.taskId != nil { return time + "marks the task complete in Moxie." }
-        return time + "marks this as done (it isn't a Moxie task, so nothing changes in Moxie)."
+        let time = timer.session != nil ? "Saves the running time and clears it from Up next. " : "Clears it from Up next. "
+        guard closesInMoxie(target) else {
+            return time + "The task stays open in Moxie — close it there when you're ready (or turn on closing in Settings → Focus)."
+        }
+        return time + (target.ticketId != nil ? "Also sets the ticket's status in Moxie." : "Also marks the task complete in Moxie.")
     }
 
     private func suggestStep(_ target: FocusTarget) async {
@@ -337,13 +343,13 @@ struct FocusTab: View {
             }
 
             HStack(spacing: 8) {
-                Button { Task { await focus.finish(markComplete: false) } } label: {
-                    Text("Save time").frame(maxWidth: .infinity)
+                Button { Task { await focus.saveForLater() } } label: {
+                    Text("Save, continue later").lineLimit(1).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(ChipButtonStyle())
-                .help("Log the time to Moxie and leave the task open")
-                Button { Task { await focus.finish(markComplete: true) } } label: {
-                    Label(doneTitle(target), systemImage: "checkmark").frame(maxWidth: .infinity)
+                .help("Save the time and keep this as Up next")
+                Button { Task { await focus.finish(closeInMoxie: closesInMoxie(target)) } } label: {
+                    Label(doneTitle(target), systemImage: "checkmark").lineLimit(1).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .help(doneHelp(target))
@@ -360,6 +366,7 @@ struct TaskRow: View {
     let task: MoxieTask
     let action: () -> Void
     @Environment(FocusStore.self) private var focus
+    @Environment(AppSettings.self) private var settings
     @State private var hovering = false
     @State private var confirming = false
     @State private var working = false
@@ -394,7 +401,7 @@ struct TaskRow: View {
             }
             .buttonStyle(.plain)
 
-            if hovering || confirming || working {
+            if settings.completeInMoxie, hovering || confirming || working {
                 Button {
                     if confirming {
                         working = true

@@ -34,6 +34,17 @@ struct FocusSettingsSection: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.muted)
             }
+            Toggle("When I finish, also close the task/ticket in Moxie", isOn: Binding(
+                get: { settings.completeInMoxie }, set: { settings.completeInMoxie = $0 }
+            ))
+            .toggleStyle(.switch)
+            .tint(Theme.navy)
+            .controlSize(.small)
+            .font(.system(size: 12))
+            Text("Off: Finish only saves your time; you close tasks in Moxie yourself. On: also adds ✓ quick-complete to task lists.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Text("Status for finished tickets").font(.system(size: 12))
                 Spacer()

@@ -91,6 +91,9 @@ final class AppSettings {
     /// PetAccessory raw value or "auto".
     var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
 
+    /// When finishing in the Focus tab, also complete the task / close the ticket in Moxie. Off: Moxie is left alone.
+    var completeInMoxie: Bool { didSet { defaults.set(completeInMoxie, forKey: "completeInMoxie") } }
+
     /// Ticket type label used when creating tickets from the widget (empty = Moxie's default).
     var ticketDefaultType: String { didSet { defaults.set(ticketDefaultType, forKey: "ticketDefaultType") } }
 
@@ -140,6 +143,7 @@ final class AppSettings {
         checkInMinutes = defaults.object(forKey: "checkInMinutes") as? Int ?? 20
         ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
         ticketDefaultType = defaults.string(forKey: "ticketDefaultType") ?? ""
+        completeInMoxie = defaults.object(forKey: "completeInMoxie") as? Bool ?? false
         petEnabled = defaults.object(forKey: "petEnabled") as? Bool ?? true
         petName = defaults.string(forKey: "petName") ?? "Blip"
         petSpecies = defaults.string(forKey: "petSpecies") ?? "blob"

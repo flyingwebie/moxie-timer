@@ -28,7 +28,7 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - **Always-visible task:** the floating pill shows the task name and the time left in the block.
 - **Idle detection:** come back after time away (or after the Mac slept) and choose to keep or discard that time.
 - **Quick capture:** press **⌃⌥Space** anywhere to add a task straight to Moxie, assigned to you.
-- **Task done:** finish a task to log the time and, optionally, mark it complete in Moxie.
+- **Finish:** saves the time and clears the task from Up next — the task stays open in Moxie (close it there). **Save, continue later** keeps it as Up next. Turn on *Settings → Focus → also close the task/ticket in Moxie* to complete tasks/close tickets from the widget (this also adds ✓ quick-complete to task lists).
 
 ### Time you can trust
 

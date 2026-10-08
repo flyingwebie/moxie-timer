@@ -256,8 +256,27 @@ final class FocusStore {
         timer.pause()
     }
 
-    /// Ends the task: saves the time to Moxie and optionally marks the task complete.
-    func finish(markComplete: Bool) async {
+    /// Saves the running time but keeps the task as "Up next" to continue later.
+    func saveForLater() async {
+        guard !isFinishing else { return }
+        isFinishing = true
+        defer { isFinishing = false }
+        if let current = block { recordUnfinished(current) }
+        block = nil
+        let worked = timer.session?.elapsed(at: .now) ?? 0
+        guard timer.session != nil else { return }
+        await timer.stopAndSave()
+        if let error = timer.lastError {
+            lastError = error
+            return
+        }
+        banner = "Saved \(DurationFormat.short(worked)) — “\(target?.name ?? "task")” stays up next."
+    }
+
+    /// Finishes the work: saves the time, clears it from "Up next" and counts it as done.
+    /// With `closeInMoxie` the task is also completed (or the ticket closed) in Moxie; otherwise Moxie is untouched.
+    func finish(closeInMoxie: Bool) async {
+        let markComplete = closeInMoxie
         guard !isFinishing else { return }
         isFinishing = true
         defer { isFinishing = false }
@@ -295,7 +314,7 @@ final class FocusStore {
                 lastError = "Time saved, but marking the task complete failed: \(error.localizedDescription)"
             }
         }
-        if markComplete { stats.record { $0.tasksDone += 1 } }
+        stats.record { $0.tasksDone += 1 }
         target = nil
         banner = message
         NSSound(named: "Hero")?.play()
