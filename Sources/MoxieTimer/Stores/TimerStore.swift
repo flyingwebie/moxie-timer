@@ -9,7 +9,7 @@ enum LogError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notConfigured: return "Add your Moxie API key and email in Settings."
-        case .missingClientOrProject: return "Pick a client and a project first."
+        case .missingClientOrProject: return "Pick a client first (project and ticket are optional)."
         case .invalidRange: return "The end time must be after the start time."
         }
     }
@@ -126,7 +126,7 @@ final class TimerStore {
 
     /// Whether the running time can be stopped now. In review mode the client/project can be chosen later.
     var canSaveCurrent: Bool {
-        settings.holdForReview || (draft.client != nil && draft.project != nil)
+        settings.holdForReview || draft.client != nil
     }
 
     private(set) var isSending = false
@@ -156,7 +156,7 @@ final class TimerStore {
     @discardableResult
     func send(_ entry: LoggedEntry, isNew: Bool = false) async throws -> LoggedEntry {
         guard let api = settings.makeAPI(), settings.isConfigured else { throw LogError.notConfigured }
-        guard let client = entry.draft.client, let project = entry.draft.project else { throw LogError.missingClientOrProject }
+        guard let client = entry.draft.client else { throw LogError.missingClientOrProject }
         guard entry.end > entry.start else { throw LogError.invalidRange }
 
         func request(billable: Bool?) -> TimeEntryRequest {
@@ -164,7 +164,7 @@ final class TimerStore {
                 timerStart: entry.start.formatted(.iso8601),
                 timerEnd: entry.end.formatted(.iso8601),
                 clientName: client.name,
-                projectName: project.name,
+                projectName: entry.draft.project?.name,
                 deliverableName: entry.draft.task?.name,
                 notes: entry.draft.composedNotes,
                 userEmail: settings.userEmail.trimmingCharacters(in: .whitespaces),

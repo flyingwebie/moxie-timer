@@ -39,6 +39,7 @@ struct WeekChart: View {
     @Environment(StatsStore.self) private var stats
     @Environment(HistoryStore.self) private var history
     @Environment(Clock.self) private var clock
+    @State private var hovered: Date?
 
     private struct Bar: Identifiable {
         let date: Date
@@ -59,13 +60,34 @@ struct WeekChart: View {
                     legend(Theme.running, "focus")
                 }
             }
+            // Details for the hovered day (or the week's total).
+            Group {
+                if let day = hovered, let bar = bars.first(where: { $0.date == day }) {
+                    Text("\(bar.date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))): ")
+                        .foregroundStyle(Theme.ink)
+                    + Text("\(DurationFormat.short(bar.tracked)) tracked").foregroundStyle(Theme.navy).bold()
+                    + Text(" · ").foregroundStyle(Theme.muted)
+                    + Text("\(DurationFormat.short(bar.focus)) focus").foregroundStyle(Theme.running).bold()
+                } else {
+                    Text("Week: \(DurationFormat.short(bars.reduce(0) { $0 + $1.tracked })) tracked · \(DurationFormat.short(bars.reduce(0) { $0 + $1.focus })) focus — hover a day")
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+            .font(.system(size: 11))
+            .lineLimit(1)
             HStack(alignment: .bottom, spacing: 8) {
                 ForEach(bars) { bar in
                     let isToday = Calendar.current.isDate(bar.date, inSameDayAs: clock.now)
+                    let isHovered = hovered == bar.date
                     VStack(spacing: 4) {
+                        Text(bar.tracked > 0 ? DurationFormat.short(bar.tracked) : "")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.ink)
+                            .opacity(isHovered ? 1 : 0)
+                            .frame(height: 11)
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Theme.navy.opacity(isToday ? 0.35 : 0.2))
+                                .fill(Theme.navy.opacity(isHovered ? 0.5 : (isToday ? 0.35 : 0.2)))
                                 .frame(height: max(2, 60 * bar.tracked / maxValue))
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Theme.running)
@@ -78,7 +100,10 @@ struct WeekChart: View {
                             .foregroundStyle(isToday ? Theme.ink : Theme.muted)
                     }
                     .frame(maxWidth: .infinity)
-                    .help("\(bar.date.formatted(.dateTime.weekday(.wide))): \(DurationFormat.short(bar.tracked)) tracked, \(DurationFormat.short(bar.focus)) focus")
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { hovered = bar.date } else if hovered == bar.date { hovered = nil }
+                    }
                 }
             }
         }

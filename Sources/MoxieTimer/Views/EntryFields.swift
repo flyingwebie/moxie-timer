@@ -5,6 +5,8 @@ struct EntryFields: View {
     @Binding var draft: EntryDraft
     var labelled = false
     @Environment(Catalog.self) private var catalog
+    @State private var addingTicket = false
+    @State private var addingTask = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,7 +41,7 @@ struct EntryFields: View {
                     }
                 )
             }
-            row("Task") {
+            row("Task", onAdd: { addingTask = true }, adding: $addingTask, form: { NewTaskForm(draft: $draft) { addingTask = false } }) {
                 SearchPicker(
                     icon: "checklist", placeholder: "No task",
                     selection: draft.task?.name,
@@ -53,7 +55,7 @@ struct EntryFields: View {
                     onSelect: { task in draft.task = task.map { Ref(id: $0.id, name: $0.name) } }
                 )
             }
-            row("Ticket") {
+            row("Ticket", onAdd: { addingTicket = true }, adding: $addingTicket, form: { NewTicketForm(draft: $draft) { addingTicket = false } }) {
                 SearchPicker(
                     icon: "ticket", placeholder: "No ticket",
                     selection: draft.ticket?.name,
@@ -122,9 +124,33 @@ struct EntryFields: View {
 
     @ViewBuilder
     private func row<Content: View>(_ label: String, divider: Bool = true, @ViewBuilder content: () -> Content) -> some View {
+        row(label, divider: divider, onAdd: nil, adding: .constant(false), form: { EmptyView() }, content: content)
+    }
+
+    /// A field; in labelled mode an optional "+" creates a new item in Moxie from a popover form.
+    @ViewBuilder
+    private func row<Content: View, Form: View>(
+        _ label: String, divider: Bool = true, onAdd: (() -> Void)?, adding: Binding<Bool>,
+        @ViewBuilder form: @escaping () -> Form, @ViewBuilder content: () -> Content
+    ) -> some View {
         if labelled {
             VStack(alignment: .leading, spacing: 6) {
-                CapsLabel(label)
+                HStack {
+                    CapsLabel(label)
+                    Spacer()
+                    if let onAdd {
+                        Button(action: onAdd) {
+                            Image(systemName: "plus")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Theme.navy)
+                                .frame(width: 22, height: 18)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("New \(label.lowercased()) in Moxie")
+                        .popover(isPresented: adding, arrowEdge: .trailing, content: form)
+                    }
+                }
                 if label == "Notes" {
                     content()
                 } else {
@@ -320,6 +346,145 @@ struct HoverRowStyle: ButtonStyle {
             configuration.label
                 .background(RoundedRectangle(cornerRadius: 6).fill(Theme.cream.opacity(hovering || configuration.isPressed ? 1 : 0)))
                 .onHover { hovering = $0 }
+        }
+    }
+}
+
+/// Creates a ticket in Moxie, linked to the entry's client, and attaches it to the entry.
+struct NewTicketForm: View {
+    @Binding var draft: EntryDraft
+    let close: () -> Void
+    @Environment(Catalog.self) private var catalog
+    @Environment(AppSettings.self) private var settings
+
+    @State private var subject = ""
+    @State private var comment = ""
+    @State private var type = ""
+    @State private var linkClient = true
+    @State private var isSaving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("New ticket").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.ink)
+            FieldBox { TextField("Subject", text: $subject).textFieldStyle(.plain) }
+            TextField("Details (optional)", text: $comment, axis: .vertical)
+                .textFieldStyle(.plain)
+                .lineLimit(2...4)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cream))
+            FieldBox { TextField("Ticket type (optional)", text: $type).textFieldStyle(.plain) }
+            if let client = draft.client {
+                Toggle("Link to \(client.name)", isOn: $linkClient)
+                    .toggleStyle(.switch).tint(Theme.navy).controlSize(.mini).font(.system(size: 12))
+            } else {
+                Text("Pick a client on the entry to link the ticket to it.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted)
+            }
+            Text("Tickets belong to a client in Moxie; the project stays on this time entry. You're set as the requester, so the client isn't emailed.")
+                .font(.system(size: 10)).foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error { ErrorBanner(message: error) { self.error = nil } }
+            HStack {
+                Button("Cancel", action: close).buttonStyle(.plain).foregroundStyle(Theme.muted)
+                Spacer()
+                Button { Task { await create() } } label: {
+                    HStack(spacing: 6) {
+                        if isSaving { ProgressView().controlSize(.small).tint(.white) }
+                        Text("Create & attach")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isSaving || subject.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .font(.system(size: 12))
+        .padding(14)
+        .frame(width: 290)
+        .onAppear { type = settings.ticketDefaultType }
+    }
+
+    private func create() async {
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let trimmedType = type.trimmingCharacters(in: .whitespaces)
+            let ticket = try await catalog.createTicket(
+                subject: subject.trimmingCharacters(in: .whitespaces),
+                comment: comment.trimmingCharacters(in: .whitespacesAndNewlines),
+                type: trimmedType,
+                client: linkClient ? draft.client : nil
+            )
+            settings.ticketDefaultType = trimmedType
+            draft.ticket = Ref(id: ticket.id, name: ticket.title)
+            close()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// Creates a task in Moxie under the entry's client/project and attaches it to the entry.
+struct NewTaskForm: View {
+    @Binding var draft: EntryDraft
+    let close: () -> Void
+    @Environment(TaskInbox.self) private var inbox
+
+    @State private var name = ""
+    @State private var linkClient = true
+    @State private var linkProject = true
+    @State private var isSaving = false
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("New task").font(.system(size: 14, weight: .bold)).foregroundStyle(Theme.ink)
+            FieldBox { TextField("Task name", text: $name).textFieldStyle(.plain).onSubmit { Task { await create() } } }
+            if let client = draft.client {
+                Toggle("Link to \(client.name)", isOn: $linkClient)
+                    .toggleStyle(.switch).tint(Theme.navy).controlSize(.mini).font(.system(size: 12))
+            }
+            if let project = draft.project {
+                Toggle("Put it in \(project.name)", isOn: $linkProject)
+                    .toggleStyle(.switch).tint(Theme.navy).controlSize(.mini).font(.system(size: 12))
+                    .disabled(!linkClient)
+            }
+            if draft.client == nil {
+                Text("Pick a client (and project) on the entry to link the task to them.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted)
+            }
+            if let error { ErrorBanner(message: error) { self.error = nil } }
+            HStack {
+                Button("Cancel", action: close).buttonStyle(.plain).foregroundStyle(Theme.muted)
+                Spacer()
+                Button { Task { await create() } } label: {
+                    HStack(spacing: 6) {
+                        if isSaving { ProgressView().controlSize(.small).tint(.white) }
+                        Text("Create & attach")
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .font(.system(size: 12))
+        .padding(14)
+        .frame(width: 290)
+    }
+
+    private func create() async {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            let client = linkClient ? draft.client : nil
+            let project = linkClient && linkProject ? draft.project : nil
+            let task = try await inbox.create(name: trimmed, client: client, project: project, due: nil)
+            draft.task = Ref(id: task.id, name: task.name)
+            close()
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 }

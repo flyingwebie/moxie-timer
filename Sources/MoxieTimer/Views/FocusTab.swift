@@ -215,10 +215,10 @@ struct FocusTab: View {
                     .foregroundStyle(Theme.faint)
             }
 
-            if timer.draft.client == nil || timer.draft.project == nil {
+            if timer.draft.client == nil {
                 Label(timer.canSaveCurrent
-                      ? "No client/project yet — you can set them in the end-of-day review."
-                      : "No client/project yet — set them in the Timer tab before the time is saved.",
+                      ? "No client yet — you can set it in the end-of-day review."
+                      : "No client yet — set it in the Timer tab before the time is saved.",
                       systemImage: "exclamationmark.circle")
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.onBreak)
@@ -232,7 +232,27 @@ struct FocusTab: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .keyboardShortcut(.defaultAction)
+
+            Button { Task { await focus.finish(markComplete: true) } } label: {
+                Label(doneTitle(target), systemImage: "checkmark.circle").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ChipButtonStyle())
+            .disabled(focus.isFinishing)
+            .help(doneHelp(target))
         }
+    }
+
+    private func doneTitle(_ target: FocusTarget) -> String {
+        if target.ticketId != nil { return "Close ticket" }
+        if target.taskId != nil { return "Mark task complete" }
+        return "Done ✓"
+    }
+
+    private func doneHelp(_ target: FocusTarget) -> String {
+        let time = timer.session != nil ? "Saves the running time, then " : ""
+        if target.ticketId != nil { return time + "sets the ticket's status in Moxie (Settings → status for finished tickets)." }
+        if target.taskId != nil { return time + "marks the task complete in Moxie." }
+        return time + "marks this as done (it isn't a Moxie task, so nothing changes in Moxie)."
     }
 
     private func suggestStep(_ target: FocusTarget) async {
@@ -314,13 +334,11 @@ struct FocusTab: View {
                 }
                 .buttonStyle(ChipButtonStyle())
                 .help("Log the time to Moxie and leave the task open")
-                if target.taskId != nil || target.ticketId != nil {
-                    Button { Task { await focus.finish(markComplete: true) } } label: {
-                        Label(target.ticketId != nil ? "Close ticket" : "Task done", systemImage: "checkmark").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .help(target.ticketId != nil ? "Log the time and set the ticket's status in Moxie" : "Log the time and mark the task complete in Moxie")
+                Button { Task { await focus.finish(markComplete: true) } } label: {
+                    Label(doneTitle(target), systemImage: "checkmark").frame(maxWidth: .infinity)
                 }
+                .buttonStyle(PrimaryButtonStyle())
+                .help(doneHelp(target))
             }
             .disabled(focus.isFinishing)
         }

@@ -60,6 +60,14 @@ struct MoxieAPI: Sendable {
         ])
     }
 
+    /// Creates a ticket; Moxie answers with `{ "ticket": {...}, "comments": [...] }`.
+    func createTicket(_ ticket: TicketCreateRequest) async throws -> MoxieTicket? {
+        struct Wrapper: Decodable { let ticket: MoxieTicket? }
+        let data = try await send("public/action/tickets/create", method: "POST", body: try JSONEncoder().encode(ticket))
+        if let wrapped = try? JSONDecoder().decode(Wrapper.self, from: data), let ticket = wrapped.ticket { return ticket }
+        return try? JSONDecoder().decode(MoxieTicket.self, from: data)
+    }
+
     /// `PATCH tickets/status` — sets the workflow status label (e.g. "Closed").
     func updateTicketStatus(id: String, status: String) async throws -> MoxieTicket? {
         let body = try JSONEncoder().encode(["id": id, "status": status])

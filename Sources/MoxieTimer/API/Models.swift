@@ -134,6 +134,17 @@ struct MoxieTaskStage: Decodable, Hashable {
     let complete: Bool?
 }
 
+/// `POST tickets/create`. The client is set through `formData.clientId`; the requester is the user themself,
+/// so the client isn't emailed about it.
+struct TicketCreateRequest: Encodable {
+    struct FormData: Encodable { let clientId: String }
+    let userEmail: String
+    let subject: String
+    let comment: String?
+    let ticketType: String?
+    let formData: FormData?
+}
+
 /// `POST tasks/create` — resolves client and project by exact name.
 struct TaskCreateRequest: Encodable {
     let name: String
@@ -183,7 +194,8 @@ struct TimeEntryRequest: Encodable {
     let timerStart: String
     let timerEnd: String
     let clientName: String
-    let projectName: String
+    /// Optional: Moxie only requires the start and end times.
+    let projectName: String?
     let deliverableName: String?
     let notes: String?
     let userEmail: String
@@ -264,7 +276,8 @@ struct LoggedEntry: Codable, Identifiable, Hashable {
     var sendError: String?
 
     var isPending: Bool { pending == true }
-    var hasCategory: Bool { draft.client != nil && draft.project != nil }
+    /// Ready to send: a client is enough; project, task and ticket are optional.
+    var hasCategory: Bool { draft.client != nil }
     var duration: TimeInterval { end.timeIntervalSince(start) }
     /// Billable state as Moxie stored it, falling back to what was requested.
     var isBillable: Bool { moxieBillable ?? draft.isBillable }

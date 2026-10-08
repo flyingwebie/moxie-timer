@@ -68,7 +68,7 @@ struct ReviewView: View {
                 HStack(spacing: 8) {
                     summary("Held", "\(pending.count)")
                     summary("Time", DurationFormat.short(pending.reduce(0) { $0 + $1.duration }))
-                    summary("Need project", "\(missing)", warn: missing > 0)
+                    summary("Need client", "\(missing)", warn: missing > 0)
                 }
 
                 ScrollView {
@@ -114,7 +114,7 @@ struct ReviewView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(ready.isEmpty || timer.isSending)
                 if missing > 0 {
-                    Text("Entries without a client and project stay here until you pick them.")
+                    Text("Entries without a client stay here until you pick one. Project and ticket are optional.")
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.muted)
                 }
@@ -149,12 +149,12 @@ struct ReviewView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     if entry.hasCategory {
-                        Text("\(entry.draft.client!.name) · \(entry.draft.project!.name)")
+                        Text([entry.draft.client?.name, entry.draft.project?.name].compactMap { $0 }.joined(separator: " · "))
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.ink)
                             .lineLimit(1)
                     } else {
-                        Label("Pick a client & project", systemImage: "exclamationmark.circle.fill")
+                        Label("Pick a client", systemImage: "exclamationmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(Theme.onBreak)
                     }
@@ -231,7 +231,7 @@ struct ReviewView: View {
         var parts: [String] = []
         if outcome.sent > 0 { parts.append("Sent \(outcome.sent) to Moxie") }
         if outcome.failed > 0 { parts.append("\(outcome.failed) failed (see the red notes)") }
-        if outcome.skipped > 0 { parts.append("\(outcome.skipped) still need a project") }
+        if outcome.skipped > 0 { parts.append("\(outcome.skipped) still need a client") }
         result = parts.isEmpty ? nil : parts.joined(separator: " · ") + "."
         if let notice = timer.notice { result = (result ?? "") + " " + notice }
     }

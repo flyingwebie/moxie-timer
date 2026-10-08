@@ -60,6 +60,25 @@ final class Catalog {
         }
     }
 
+    /// Creates a ticket (optionally for a client) and adds it to that client's cached list.
+    func createTicket(subject: String, comment: String, type: String, client: Ref?) async throws -> MoxieTicket {
+        guard let api = settings.makeAPI() else { throw LogError.notConfigured }
+        let request = TicketCreateRequest(
+            userEmail: settings.userEmail.trimmingCharacters(in: .whitespaces),
+            subject: subject,
+            comment: comment.isEmpty ? nil : comment,
+            ticketType: type.isEmpty ? nil : type,
+            formData: client.map { .init(clientId: $0.id) }
+        )
+        guard let ticket = try await api.createTicket(request) else {
+            throw UpdateError("Moxie created the ticket but didn't return it — refresh the ticket list.")
+        }
+        if let client {
+            ticketsByClient[client.id, default: []].insert(ticket, at: 0)
+        }
+        return ticket
+    }
+
     private func fetch(_ key: String, _ work: (MoxieAPI) async throws -> Void) async {
         guard let api = settings.makeAPI() else {
             lastError = "Add your Moxie API key in Settings."

@@ -91,6 +91,9 @@ final class AppSettings {
     /// PetAccessory raw value or "auto".
     var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
 
+    /// Ticket type label used when creating tickets from the widget (empty = Moxie's default).
+    var ticketDefaultType: String { didSet { defaults.set(ticketDefaultType, forKey: "ticketDefaultType") } }
+
     /// Status set on a ticket when you finish it from the Focus tab.
     var ticketDoneStatus: String {
         didSet { defaults.set(ticketDoneStatus, forKey: "ticketDoneStatus") }
@@ -136,6 +139,7 @@ final class AppSettings {
             ?? ["youtube", "reddit", "facebook", "instagram", "netflix", "tiktok", "twitch"]
         checkInMinutes = defaults.object(forKey: "checkInMinutes") as? Int ?? 20
         ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
+        ticketDefaultType = defaults.string(forKey: "ticketDefaultType") ?? ""
         petEnabled = defaults.object(forKey: "petEnabled") as? Bool ?? true
         petName = defaults.string(forKey: "petName") ?? "Blip"
         petSpecies = defaults.string(forKey: "petSpecies") ?? "blob"
