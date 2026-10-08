@@ -96,6 +96,8 @@ struct PetCard: View {
                 .foregroundStyle(Theme.ink.opacity(0.8))
                 .fixedSize(horizontal: false, vertical: true)
 
+            SpeciesPicker(selection: $settings.petSpecies, compact: true)
+
             HStack {
                 Text("Wearing").font(.system(size: 12))
                 Spacer()
@@ -151,6 +153,8 @@ struct PetSettingsSection: View {
             Toggle("Show the pet next to the timer", isOn: $settings.petEnabled)
                 .toggleStyle(.switch).tint(Theme.navy).controlSize(.small).font(.system(size: 12))
 
+            SpeciesPicker(selection: $settings.petSpecies)
+
             HStack {
                 Text("Name").font(.system(size: 12))
                 Spacer()
@@ -199,6 +203,42 @@ struct PetSettingsSection: View {
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cream))
                 .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border))
+        }
+    }
+}
+
+/// Grid of live previews to choose the pet.
+struct SpeciesPicker: View {
+    @Binding var selection: String
+    var compact = false
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 15)) { context in
+            let time = context.date.timeIntervalSinceReferenceDate
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: compact ? 6 : 3), spacing: 6) {
+                ForEach(PetSpecies.allCases) { species in
+                    let selected = selection == species.rawValue
+                    Button { selection = species.rawValue } label: {
+                        VStack(spacing: 2) {
+                            PetBlob(expression: selected ? .happy : .idle, mood: 80, accessory: .none,
+                                    time: time, species: species, level: 6)
+                                .frame(width: compact ? 30 : 40, height: compact ? 30 : 40)
+                            if !compact {
+                                Text(species.title)
+                                    .font(.system(size: 10, weight: selected ? .bold : .regular))
+                                    .foregroundStyle(selected ? Theme.ink : Theme.muted)
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(selected ? Theme.navy.opacity(0.08) : .clear))
+                        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(selected ? Theme.navy.opacity(0.5) : Theme.border))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(species.title)
+                }
+            }
         }
     }
 }

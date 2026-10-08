@@ -78,6 +78,8 @@ final class AppSettings {
     // MARK: Pet
     var petEnabled: Bool { didSet { defaults.set(petEnabled, forKey: "petEnabled") } }
     var petName: String { didSet { defaults.set(petName, forKey: "petName") } }
+    /// PetSpecies raw value.
+    var petSpecies: String { didSet { defaults.set(petSpecies, forKey: "petSpecies") } }
     /// PetTone raw value.
     var petTone: String { didSet { defaults.set(petTone, forKey: "petTone") } }
     /// Free-text description of how the pet should talk (used by AI lines).
@@ -136,6 +138,7 @@ final class AppSettings {
         ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
         petEnabled = defaults.object(forKey: "petEnabled") as? Bool ?? true
         petName = defaults.string(forKey: "petName") ?? "Blip"
+        petSpecies = defaults.string(forKey: "petSpecies") ?? "blob"
         petTone = defaults.string(forKey: "petTone") ?? "warm"
         petStyle = defaults.string(forKey: "petStyle") ?? ""
         petPraiseLines = defaults.string(forKey: "petPraiseLines") ?? ""

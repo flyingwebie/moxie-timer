@@ -63,12 +63,14 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 
 ### Your pet
 
-A little blob spirit (default name **Blip**) sits next to the pill. It glows and celebrates when you finish blocks and
+Pick a **blob spirit, cat, dog, plant, ghost or robot** (Settings → Your pet, or click the pet). It sits next to the pill. It glows and celebrates when you finish blocks and
 tasks, gets worried the moment you drift and stern if you stay there, sleeps during breaks, and talks to you in a
 speech bubble — with a **Back to it** button while you're drifting. It also appears in the drift prompt.
 
 - **Mood** rises with focus, finished blocks, done tasks and comebacks; drifting lowers it. It resets each morning
   (brighter on a streak).
+<img src="Support/pets-preview.png" width="640" alt="Pets and their moods">
+
 - **Levels & wardrobe:** XP (≈1 per focused minute plus bonuses) unlocks a sparkle, bow, sprout, beanie, scarf, crown
   and halo. Click the pet to see its mood, level and today's stats, and choose what it wears.
 - **Your tone** (Settings → Your pet): Warm & playful, Coach, Quiet or a mix; a "Talk to me like…" description; your own

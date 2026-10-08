@@ -5,6 +5,7 @@ struct PetView: View {
     @Environment(PetStore.self) private var pet
     var size: CGFloat = 38
     var expression: PetStore.Expression?
+    var species: PetSpecies?
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1.0 / 30)) { context in
@@ -12,7 +13,9 @@ struct PetView: View {
                 expression: expression ?? pet.expression,
                 mood: pet.mood,
                 accessory: pet.accessory,
-                time: context.date.timeIntervalSinceReferenceDate
+                time: context.date.timeIntervalSinceReferenceDate,
+                species: species ?? pet.species,
+                level: pet.level
             )
             .frame(width: size, height: size)
         }
@@ -24,6 +27,8 @@ struct PetBlob: View {
     let mood: Double
     let accessory: PetAccessory
     let time: TimeInterval
+    var species: PetSpecies = .blob
+    var level: Int = 1
 
     private var motion: (amplitude: Double, speed: Double) {
         switch expression {
@@ -50,6 +55,14 @@ struct PetBlob: View {
     }
 
     var body: some View {
+        if species == .blob {
+            blobBody
+        } else {
+            PetCritter(species: species, expression: expression, mood: mood, accessory: accessory, time: time, level: level)
+        }
+    }
+
+    private var blobBody: some View {
         GeometryReader { proxy in
             let s = min(proxy.size.width, proxy.size.height)
             let breath = sin(time * motion.speed) * 0.04
@@ -83,7 +96,7 @@ struct PetBlob: View {
                 PetFace(expression: expression, time: time, size: s)
                     .offset(y: s * 0.04)
 
-                accessoryView(size: s)
+                PetAccessoryView(accessory: accessory, size: s)
 
                 if expression == .sleeping {
                     Text("z")
@@ -108,8 +121,17 @@ struct PetBlob: View {
         }
     }
 
+}
+
+/// Accessory drawn relative to the pet's head; `lift` moves it up for taller pets.
+struct PetAccessoryView: View {
+    let accessory: PetAccessory
+    let size: CGFloat
+    var lift: CGFloat = 0
+
     @ViewBuilder
-    private func accessoryView(size s: CGFloat) -> some View {
+    var content: some View {
+        let s = size
         switch accessory {
         case .none, .halo:
             EmptyView()
@@ -139,12 +161,17 @@ struct PetBlob: View {
             Text("👑").font(.system(size: s * 0.32)).offset(y: -s * 0.48)
         }
     }
+
+    var body: some View {
+        content.offset(y: -size * lift)
+    }
 }
 
-private struct PetFace: View {
+struct PetFace: View {
     let expression: PetStore.Expression
     let time: TimeInterval
     let size: CGFloat
+    var ink: Color = Theme.ink
 
     var body: some View {
         let s = size
@@ -173,16 +200,16 @@ private struct PetFace: View {
         let s = size
         switch expression {
         case .sleeping:
-            Arc(up: false).stroke(Theme.ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
+            Arc(up: false).stroke(ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
                 .frame(width: s * 0.12, height: s * 0.05)
         case .happy, .celebrating:
-            Arc(up: true).stroke(Theme.ink, style: StrokeStyle(lineWidth: s * 0.05, lineCap: .round))
+            Arc(up: true).stroke(ink, style: StrokeStyle(lineWidth: s * 0.05, lineCap: .round))
                 .frame(width: s * 0.12, height: s * 0.06)
         default:
             ZStack {
                 Ellipse().fill(.white).frame(width: s * 0.15, height: blinking ? s * 0.02 : s * 0.18)
                 if !blinking {
-                    Circle().fill(Theme.ink).frame(width: s * 0.08)
+                    Circle().fill(ink).frame(width: s * 0.08)
                         .offset(x: expression == .focused ? 0 : sin(time * 0.7) * s * 0.02,
                                 y: expression == .worried || expression == .upset ? s * 0.02 : 0)
                 }
@@ -190,7 +217,7 @@ private struct PetFace: View {
             .overlay(alignment: .top) {
                 if expression == .worried || expression == .upset {
                     Capsule()
-                        .fill(Theme.ink)
+                        .fill(ink)
                         .frame(width: s * 0.14, height: s * 0.035)
                         // Worried: inner ends up (pleading). Upset: inner ends down (stern).
                         .rotationEffect(.degrees((left ? 1 : -1) * (expression == .upset ? 22 : -18)))
@@ -205,21 +232,21 @@ private struct PetFace: View {
         let s = size
         switch expression {
         case .celebrating:
-            Ellipse().fill(Theme.ink).frame(width: s * 0.1, height: s * 0.09)
+            Ellipse().fill(ink).frame(width: s * 0.1, height: s * 0.09)
         case .happy, .idle:
-            Arc(up: false).stroke(Theme.ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
+            Arc(up: false).stroke(ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
         case .focused:
-            Capsule().fill(Theme.ink).frame(width: s * 0.09, height: s * 0.035)
+            Capsule().fill(ink).frame(width: s * 0.09, height: s * 0.035)
         case .worried, .upset:
-            Arc(up: true).stroke(Theme.ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
+            Arc(up: true).stroke(ink, style: StrokeStyle(lineWidth: s * 0.045, lineCap: .round))
         case .sleeping:
-            Circle().fill(Theme.ink.opacity(0.7)).frame(width: s * 0.05)
+            Circle().fill(ink.opacity(0.7)).frame(width: s * 0.05)
         }
     }
 }
 
 /// A half-ellipse arc: `up` curves upward (∩), otherwise a smile (∪).
-private struct Arc: Shape {
+struct Arc: Shape {
     let up: Bool
     func path(in rect: CGRect) -> Path {
         var path = Path()

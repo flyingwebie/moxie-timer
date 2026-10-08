@@ -1,6 +1,23 @@
 import AppKit
 import Observation
 
+/// Which creature the pet is. All share moods, levels and accessories.
+enum PetSpecies: String, CaseIterable, Identifiable {
+    case blob, cat, dog, plant, ghost, robot
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .blob: return "Blob spirit"
+        case .cat: return "Cat"
+        case .dog: return "Dog"
+        case .plant: return "Plant"
+        case .ghost: return "Ghost"
+        case .robot: return "Robot"
+        }
+    }
+}
+
 /// Things the pet can wear; unlocked by level.
 enum PetAccessory: String, CaseIterable, Identifiable {
     case none, sparkle, bow, sprout, beanie, scarf, crown, halo
@@ -57,6 +74,8 @@ final class PetStore {
     }
     var nextUnlock: PetAccessory? { PetAccessory.allCases.first { $0.unlockLevel > level } }
     var unlocked: [PetAccessory] { PetAccessory.allCases.filter { $0.unlockLevel <= level } }
+
+    var species: PetSpecies { PetSpecies(rawValue: settings.petSpecies) ?? .blob }
 
     /// What it's wearing: the chosen accessory, or the best unlocked one on "auto".
     var accessory: PetAccessory {
