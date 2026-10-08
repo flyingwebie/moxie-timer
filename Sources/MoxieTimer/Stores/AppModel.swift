@@ -72,6 +72,7 @@ final class AppModel {
     let idle: IdleMonitor
     let activity: ActivityWatcher
     let pet: PetStore
+    let calls: CallDetector
 
     private init() {
         settings = AppSettings()
@@ -83,5 +84,11 @@ final class AppModel {
         idle = IdleMonitor(timer: timer, focus: focus)
         activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history, stats: stats)
         pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai)
+        calls = CallDetector(settings: settings)
+        let calls = calls
+        focus.isInCall = { calls.inCall }
+        activity.isInCall = { calls.inCall }
+        idle.isInCall = { calls.inCall }
+        pet.isInCall = { calls.inCall }
     }
 }

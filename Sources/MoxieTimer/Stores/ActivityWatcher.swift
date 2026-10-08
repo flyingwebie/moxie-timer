@@ -38,6 +38,8 @@ final class ActivityWatcher {
     @ObservationIgnored var onDriftNotify: (() -> Void)?
 
     @ObservationIgnored let learner = ContextLearner()
+    /// Set by the app: during calls drift nudges and check-ins pause, and the not-tracking reminder never takes over the screen.
+    @ObservationIgnored var isInCall: () -> Bool = { false }
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let timer: TimerStore
     @ObservationIgnored private let focus: FocusStore
@@ -111,6 +113,10 @@ final class ActivityWatcher {
     }
 
     private func checkDrift(now: Date, tracking: Bool, distraction: String?) {
+        if isInCall() {
+            resetDrift()
+            return
+        }
         guard settings.watchDistractions, tracking, let label = distraction,
               (allowedUntil[label] ?? .distantPast) < now else {
             resetDrift()
@@ -173,6 +179,12 @@ final class ActivityWatcher {
     // MARK: Check-ins
 
     private func checkIn(now: Date, tracking: Bool) {
+        if isInCall() {
+            // Restart the interval after the call instead of asking right away.
+            if checkInDue { checkInDue = false }
+            lastCheckIn = tracking ? now : nil
+            return
+        }
         guard tracking, settings.checkInMinutes > 0 else {
             lastCheckIn = nil
             if checkInDue { checkInDue = false }
@@ -220,7 +232,7 @@ final class ActivityWatcher {
         }
         guard let since = untrackedSince else { return }
         let elapsed = now.timeIntervalSince(since)
-        if elapsed >= 300, nudge < .prompted {
+        if elapsed >= 300, nudge < .prompted, !isInCall() {
             nudge = .prompted
             promptKind = .notTracking
             onPrompt?()

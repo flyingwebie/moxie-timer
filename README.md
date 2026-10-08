@@ -53,6 +53,15 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - **Check-ins:** every 20 min (configurable or off) a small bubble under the pill asks "Still on *task*?" —
   Yes / Switch task / Break. It disappears on its own after a minute.
 
+### Calls
+
+While another app uses the microphone (Zoom, Google Meet in a browser, Teams, Slack huddles, FaceTime…) the widget
+treats you as **in a call**: the timer keeps tracking, but the break screen, drift nudges, check-ins, idle prompts,
+centred reminders and pet bubbles wait. A break that comes due during the call appears when it ends; the pill shows 📞.
+No permission is needed — macOS only reports *that* the mic is in use (and by which app), never audio. Always-on
+recorders and dictation apps can be ignored (Settings → Calls shows what's using the mic, with **Ignore** buttons), and
+there's an **I'm in a Call** switch in the menu bar for anything detection misses.
+
 ### Progress you can see
 
 - **Today strip** on the Focus tab: focus blocks finished, focus minutes, tasks done and your focus streak (days in a row

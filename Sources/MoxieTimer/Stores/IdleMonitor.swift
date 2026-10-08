@@ -50,9 +50,20 @@ final class IdleMonitor {
         CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
     }
 
+    /// Set by the app: on a call you may not touch the keyboard for a long time, so that isn't "away".
+    @ObservationIgnored var isInCall: () -> Bool = { false }
+    @ObservationIgnored private var lastCallSeen: Date?
+
     private func poll() {
         guard thresholdMinutes > 0, pending == nil else { return }
-        let idle = secondsIdle
+        if isInCall() {
+            awaySince = nil
+            lastCallSeen = .now
+            return
+        }
+        // Keyboard silence during a call isn't time away: only count idle time since the call ended.
+        let sinceCall = lastCallSeen.map { Date.now.timeIntervalSince($0) } ?? .infinity
+        let idle = min(secondsIdle, sinceCall)
         if awaySince == nil {
             if timer.session?.isRunning == true, idle >= TimeInterval(thresholdMinutes * 60) {
                 markAway(since: Date.now.addingTimeInterval(-idle))

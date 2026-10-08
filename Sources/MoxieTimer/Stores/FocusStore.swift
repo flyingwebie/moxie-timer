@@ -118,8 +118,11 @@ final class FocusStore {
         self.ticker = ticker
     }
 
+    /// Set by the app: true while on a call. The break screen never covers a call; a due break waits until it ends.
+    @ObservationIgnored var isInCall: () -> Bool = { false }
+
     var needsOverlay: Bool {
-        guard let phase = block?.phase else { return false }
+        guard let phase = block?.phase, !isInCall() else { return false }
         return phase == .breakDue || phase == .onBreak || phase == .breakOver
     }
 

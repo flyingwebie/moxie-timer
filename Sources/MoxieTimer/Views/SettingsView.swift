@@ -121,6 +121,10 @@ struct SettingsView: View {
 
             Divider()
 
+            CallSettingsSection()
+
+            Divider()
+
             PetSettingsSection()
 
             Divider()

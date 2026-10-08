@@ -14,6 +14,7 @@ struct MoxieTimerApp: App {
                 .environment(model.updater)
                 .environment(model.focus)
                 .environment(model.history)
+                .environment(model.calls)
         } label: {
             MenuBarLabel()
                 .environment(model.timer)
@@ -68,6 +69,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             notifier.onBack = { model.activity.backToWork(dropDrift: false) }
             notifier.onAllow = { model.activity.allowForWork() }
+            model.calls.onChange = { [weak overlay, weak prompt] in
+                // Hide the break screen and prompts when a call starts; show a waiting break once it ends.
+                overlay?.sync()
+                if model.calls.inCall { prompt?.hide() }
+            }
             model.activity.onPrompt = { [weak prompt] in
                 prompt?.hide()
                 prompt?.show()
@@ -127,6 +133,7 @@ private struct MenuBarMenu: View {
     @Environment(WidgetUI.self) private var ui
     @Environment(Updater.self) private var updater
     @Environment(HistoryStore.self) private var history
+    @Environment(CallDetector.self) private var calls
 
     var body: some View {
         if !history.pending.isEmpty {
@@ -174,6 +181,8 @@ private struct MenuBarMenu: View {
             delegate.panelController?.setVisible(true)
             ui.expand(route: .addEntry)
         }
+        Toggle("I'm in a Call", isOn: Binding(get: { calls.inCall }, set: { calls.manualCall = $0 }))
+            .help("Pauses breaks and nudges while the timer keeps tracking. Calls using the microphone are detected automatically.")
         Button("Show / Hide Widget") {
             delegate.panelController?.setVisible(!(delegate.panelController?.isVisible ?? false))
         }

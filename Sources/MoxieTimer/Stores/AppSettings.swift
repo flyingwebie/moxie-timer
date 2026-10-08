@@ -91,6 +91,11 @@ final class AppSettings {
     /// PetAccessory raw value or "auto".
     var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
 
+    /// Detect calls (microphone in use) and pause breaks/nudges while one is on.
+    var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: "detectCalls") } }
+    /// Apps whose microphone use isn't a call (always-on recorders, dictation). Comma-separated, matched loosely.
+    var callIgnoreList: String { didSet { defaults.set(callIgnoreList, forKey: "callIgnoreList") } }
+
     /// When finishing in the Focus tab, also complete the task / close the ticket in Moxie. Off: Moxie is left alone.
     var completeInMoxie: Bool { didSet { defaults.set(completeInMoxie, forKey: "completeInMoxie") } }
 
@@ -144,6 +149,9 @@ final class AppSettings {
         ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
         ticketDefaultType = defaults.string(forKey: "ticketDefaultType") ?? ""
         completeInMoxie = defaults.object(forKey: "completeInMoxie") as? Bool ?? false
+        detectCalls = defaults.object(forKey: "detectCalls") as? Bool ?? true
+        callIgnoreList = defaults.string(forKey: "callIgnoreList")
+            ?? "screenpipe, krisp, whisper, dictation, siri, corespeech, voice memos, voicememos"
         petEnabled = defaults.object(forKey: "petEnabled") as? Bool ?? true
         petName = defaults.string(forKey: "petName") ?? "Blip"
         petSpecies = defaults.string(forKey: "petSpecies") ?? "blob"

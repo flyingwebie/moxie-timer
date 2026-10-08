@@ -285,7 +285,11 @@ final class PetStore {
 
     // MARK: Talking
 
+    /// Set by the app: the pet stays quiet during calls.
+    @ObservationIgnored var isInCall: () -> Bool = { false }
+
     func say(_ event: PetEvent) {
+        guard !isInCall() else { return }
         let now = Date.now
         let important: Set<PetEvent> = [.taskDone, .levelUp, .blockDone, .driftFirm, .driftPrompt, .cameBack]
         // Don't chatter: minor positive lines wait if something was said recently.

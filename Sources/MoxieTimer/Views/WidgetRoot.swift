@@ -36,6 +36,7 @@ struct PillBar: View {
     @Environment(Updater.self) private var updater
     @Environment(FocusStore.self) private var focus
     @Environment(ActivityWatcher.self) private var activity
+    @Environment(CallDetector.self) private var calls
 
     private var notTracking: Bool {
         activity.nudge != .none && timer.session?.isRunning != true
@@ -75,6 +76,12 @@ struct PillBar: View {
 
             HStack(spacing: 6) {
                 HStack(spacing: 7) {
+                    if calls.inCall {
+                        Image(systemName: "phone.fill")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundStyle(Theme.running)
+                            .help("In a call\(calls.micApps.isEmpty ? "" : " (\(calls.micApps.joined(separator: ", ")))") — breaks and nudges wait; the timer keeps tracking.")
+                    }
                     Circle()
                         .fill(dotColor)
                         .frame(width: 7, height: 7)
@@ -171,7 +178,7 @@ struct PillBar: View {
         case .warmup: return "warm-up \(clockText)"
         case .focus: return block.pausedAt == nil ? clockText : "paused"
         case .onBreak: return "break \(clockText)"
-        case .breakDue, .breakOver: return "break"
+        case .breakDue, .breakOver: return calls.inCall ? "break after call" : "break"
         }
     }
 

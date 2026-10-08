@@ -417,3 +417,65 @@ struct DataSettingsSection: View {
         }
     }
 }
+
+struct CallSettingsSection: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(CallDetector.self) private var calls
+    @Environment(Clock.self) private var clock
+
+    var body: some View {
+        @Bindable var settings = settings
+        // Re-read every clock tick so the list stays live.
+        let _ = clock.now
+        let micApps = calls.allMicApps
+
+        VStack(alignment: .leading, spacing: 8) {
+            CapsLabel("Calls")
+            Toggle("Detect calls and pause breaks & nudges", isOn: $settings.detectCalls)
+                .toggleStyle(.switch).tint(Theme.navy).controlSize(.small).font(.system(size: 12))
+            Text("While another app uses the microphone (Zoom, Meet, Teams, Slack, FaceTime…) the timer keeps tracking, but the break screen, drift nudges, check-ins, idle prompts and pet bubbles wait. A break that comes due appears after the call.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 6) {
+                Circle().fill(calls.inCall ? Theme.running : Theme.faint).frame(width: 7, height: 7)
+                Text(calls.inCall ? "In a call now" : "Not in a call").font(.system(size: 12, weight: .semibold))
+                Spacer()
+                Toggle("Manual", isOn: Binding(get: { calls.manualCall }, set: { calls.manualCall = $0 }))
+                    .toggleStyle(.checkbox).font(.system(size: 11))
+                    .help("Mark yourself in a call by hand (also in the menu bar)")
+            }
+
+            Text("Using the microphone now").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
+            if micApps.isEmpty {
+                Text("Nothing").font(.system(size: 11)).foregroundStyle(Theme.faint)
+            } else {
+                ForEach(micApps, id: \.self) { app in
+                    HStack {
+                        Image(systemName: "mic.fill").font(.system(size: 10)).foregroundStyle(Theme.muted)
+                        Text(app).font(.system(size: 12))
+                        Spacer()
+                        if calls.isIgnored(app) {
+                            Text("ignored").font(.system(size: 10)).foregroundStyle(Theme.faint)
+                        } else {
+                            Button("Ignore") { calls.ignore(app) }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Theme.navy)
+                                .help("Not a call app (e.g. a screen recorder or dictation)")
+                        }
+                    }
+                }
+            }
+
+            Text("Not calls (comma-separated)").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
+            TextField("screenpipe, krisp, whisper…", text: $settings.callIgnoreList, axis: .vertical)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .lineLimit(1...3)
+                .padding(8)
+                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cream))
+        }
+    }
+}
