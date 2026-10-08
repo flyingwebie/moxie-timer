@@ -2,6 +2,7 @@ import ApplicationServices
 import SwiftUI
 
 struct FocusSettingsSection: View {
+    @Environment(AppSettings.self) private var settings
     @Environment(FocusStore.self) private var focus
     @Environment(IdleMonitor.self) private var idle
 
@@ -32,6 +33,16 @@ struct FocusSettingsSection: View {
                 Text("\(focus.suggestedMinutes) min (adaptive)")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.muted)
+            }
+            HStack {
+                Text("Status for finished tickets").font(.system(size: 12))
+                Spacer()
+                FieldBox {
+                    TextField("Closed", text: Binding(get: { settings.ticketDoneStatus }, set: { settings.ticketDoneStatus = $0 }))
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                }
+                .frame(width: 120)
             }
             Text("Capture a task from anywhere with \(HotKey.captureDescription).")
                 .font(.system(size: 11))
@@ -349,6 +360,49 @@ private struct FlowLayout: Layout {
             view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
             x += size.width + spacing
             rowHeight = max(rowHeight, size.height)
+        }
+    }
+}
+
+struct DataSettingsSection: View {
+    @Environment(HistoryStore.self) private var history
+    @State private var message: String?
+
+    var body: some View {
+        let backups = history.backups
+        VStack(alignment: .leading, spacing: 8) {
+            CapsLabel("Local data")
+            Text(backups.isEmpty
+                 ? "A daily copy of your local entries is kept for 14 days. The first one is made on the next change."
+                 : "\(backups.count) daily backup\(backups.count == 1 ? "" : "s") of your local entries (kept 14 days).")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 8) {
+                Menu("Restore from backup…") {
+                    ForEach(backups) { backup in
+                        Button("\(backup.day.formatted(date: .abbreviated, time: .omitted)) · \(backup.count) entries") {
+                            let restored = history.restore(backup)
+                            message = restored == 0 ? "Nothing missing — all entries from that day are already here." : "Restored \(restored) entries."
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(backups.isEmpty)
+                Spacer()
+                Button("Show in Finder") {
+                    try? FileManager.default.createDirectory(at: history.backupFolder, withIntermediateDirectories: true)
+                    NSWorkspace.shared.open(history.backupFolder)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.navy)
+            }
+            .font(.system(size: 12, weight: .semibold))
+            if let message {
+                Text(message).font(.system(size: 11)).foregroundStyle(Theme.running)
+            }
         }
     }
 }

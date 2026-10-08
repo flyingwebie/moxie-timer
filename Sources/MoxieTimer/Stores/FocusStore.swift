@@ -5,6 +5,7 @@ import Observation
 struct FocusTarget: Codable, Equatable {
     var name: String
     var taskId: String?
+    var ticketId: String?
     var projectTypeId: String?
     var clientName: String?
     var projectName: String?
@@ -94,9 +95,12 @@ final class FocusStore {
     @ObservationIgnored private var ticker: Timer?
     @ObservationIgnored private let storageKey = "focusState"
 
-    init(timer: TimerStore, inbox: TaskInbox) {
+    @ObservationIgnored private let stats: StatsStore
+
+    init(timer: TimerStore, inbox: TaskInbox, stats: StatsStore) {
         self.timer = timer
         self.inbox = inbox
+        self.stats = stats
         warmupEnabled = UserDefaults.standard.object(forKey: "focusWarmup") as? Bool ?? true
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let state = try? JSONDecoder().decode(Persisted.self, from: data) {
@@ -126,16 +130,24 @@ final class FocusStore {
     /// Switches focus to a Moxie task. Any running time is saved first so it isn't misattributed.
     func select(_ task: MoxieTask) async {
         guard await saveRunningTimeBeforeSwitching() else { return }
-        target = FocusTarget(
-            name: task.name, taskId: task.id, projectTypeId: task.projectTypeId,
-            clientName: task.client?.name, projectName: task.project?.name, due: task.dueDate
-        )
         var draft = timer.draft
         draft.client = task.clientRef
-        draft.project = task.projectRef
-        draft.task = Ref(id: task.id, name: task.name)
-        draft.ticket = nil
         draft.notes = ""
+        if let ticketId = task.sourceTicketId {
+            // Tickets have no project: reuse the last project logged for this client (changeable in Timer/Review).
+            draft.project = draft.client.flatMap { timer.lastProject(forClient: $0.id) }
+            draft.task = nil
+            draft.ticket = Ref(id: ticketId, name: task.name)
+        } else {
+            draft.project = task.projectRef
+            draft.task = Ref(id: task.id, name: task.name)
+            draft.ticket = nil
+        }
+        target = FocusTarget(
+            name: task.name, taskId: task.isTicket ? nil : task.id, ticketId: task.sourceTicketId,
+            projectTypeId: task.projectTypeId,
+            clientName: task.client?.name, projectName: draft.project?.name, due: task.dueDate
+        )
         timer.draft = draft
         pickReason = nil
     }
@@ -224,8 +236,18 @@ final class FocusStore {
     }
 
     /// Stops the block without finishing the task. The tracked time stays in the Timer tab.
+    /// Adds the focus time of a block that ends early (completed blocks are counted when they complete).
+    private func recordUnfinished(_ current: FocusBlock) {
+        guard current.isWorking else { return }
+        let worked = max(0, (current.pausedAt ?? .now).timeIntervalSince(current.startedAt))
+        // A snoozed block was already counted in full; only the snooze minutes are extra.
+        let extra = current.snoozed ? max(0, worked - current.length) : worked
+        if extra > 0 { stats.record { $0.focusSeconds += extra } }
+    }
+
     func stopBlock() {
         guard let current = block else { return }
+        recordUnfinished(current)
         let worked = (current.pausedAt ?? .now).timeIntervalSince(current.startedAt)
         if current.isWorking, !current.snoozed, worked < current.length / 2 {
             adapt(completed: false, length: current.length)
@@ -241,6 +263,7 @@ final class FocusStore {
         defer { isFinishing = false }
         let finishedTarget = target
         let focused = timer.session?.elapsed(at: .now) ?? 0
+        if let current = block { recordUnfinished(current) }
         block = nil
 
         if timer.session != nil {
@@ -254,7 +277,14 @@ final class FocusStore {
         var message = "Nice work — “\(finishedTarget?.name ?? "task")” done"
         if focused >= 60 { message += " after \(DurationFormat.short(focused)) of focus" }
         message += "."
-        if markComplete, let taskId = finishedTarget?.taskId {
+        if markComplete, let ticketId = finishedTarget?.ticketId {
+            do {
+                let confirmed = try await inbox.closeTicket(id: ticketId)
+                message += confirmed ? " Ticket closed in Moxie ✓" : " Moxie didn't confirm the ticket status — check the ticket."
+            } catch {
+                lastError = "Time saved, but closing the ticket failed: \(error.localizedDescription)"
+            }
+        } else if markComplete, let taskId = finishedTarget?.taskId {
             let task = inbox.tasks.first { $0.id == taskId }
                 ?? MoxieTask(id: taskId, name: finishedTarget?.name ?? "", projectId: nil, status: nil, parentTaskId: nil,
                              projectTypeId: finishedTarget?.projectTypeId)
@@ -265,6 +295,7 @@ final class FocusStore {
                 lastError = "Time saved, but marking the task complete failed: \(error.localizedDescription)"
             }
         }
+        if markComplete { stats.record { $0.tasksDone += 1 } }
         target = nil
         banner = message
         NSSound(named: "Hero")?.play()
@@ -338,7 +369,14 @@ final class FocusStore {
             banner = "Warm-up done — you're in. Keep going."
             NSSound(named: "Tink")?.play()
         case .focus:
-            if !current.snoozed { adapt(completed: true, length: current.length) }
+            if !current.snoozed {
+                adapt(completed: true, length: current.length)
+                let length = current.length
+                stats.record {
+                    $0.blocksCompleted += 1
+                    $0.focusSeconds += length
+                }
+            }
             current.phase = .breakDue
             current.phaseEndsAt = .distantFuture
             NSSound(named: "Glass")?.play()

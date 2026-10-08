@@ -41,11 +41,14 @@ struct TaskListView: View {
                 }
             }
 
-            Toggle("Only tasks assigned to me", isOn: $inbox.onlyMine)
-                .toggleStyle(.switch)
-                .tint(Theme.navy)
-                .controlSize(.mini)
-                .font(.system(size: 12))
+            HStack(spacing: 14) {
+                Toggle("Only mine", isOn: $inbox.onlyMine)
+                Toggle("Include tickets", isOn: $inbox.includeTickets)
+            }
+            .toggleStyle(.switch)
+            .tint(Theme.navy)
+            .controlSize(.mini)
+            .font(.system(size: 12))
 
             if let error = inbox.lastError {
                 ErrorBanner(message: error) { inbox.lastError = nil }

@@ -5,6 +5,7 @@ import Observation
 @MainActor @Observable
 final class TaskInbox {
     private(set) var tasks: [MoxieTask] = []
+    private(set) var tickets: [MoxieTicket] = []
     private(set) var isLoading = false
     private(set) var lastLoaded: Date?
     var lastError: String?
@@ -18,14 +19,41 @@ final class TaskInbox {
     @ObservationIgnored private var myUserId: Int?
     @ObservationIgnored private var myUserEmail: String?
 
-    init(settings: AppSettings) {
+    /// Show open Moxie tickets alongside tasks.
+    var includeTickets: Bool {
+        didSet { UserDefaults.standard.set(includeTickets, forKey: "inboxIncludeTickets") }
+    }
+
+    @ObservationIgnored private let catalog: Catalog
+
+    init(settings: AppSettings, catalog: Catalog) {
         self.settings = settings
+        self.catalog = catalog
         onlyMine = UserDefaults.standard.object(forKey: "inboxOnlyMine") as? Bool ?? true
+        includeTickets = UserDefaults.standard.object(forKey: "inboxIncludeTickets") as? Bool ?? true
+    }
+
+    /// Tickets shaped as inbox items so they rank and display like tasks.
+    private var ticketItems: [MoxieTask] {
+        tickets.filter { $0.open != false }.map { ticket in
+            let clientId = ticket.clientId ?? ticket.client?.id
+            let clientName = ticket.client?.name ?? catalog.clients.first { $0.id == clientId }?.name
+            return MoxieTask(
+                id: "ticket:\(ticket.id)", name: ticket.title, projectId: nil, status: ticket.status, parentTaskId: nil,
+                clientId: clientId,
+                client: clientId.map { MoxieTask.Micro(id: $0, name: clientName) },
+                assignedToList: ticket.assignedTo,
+                dueDate: ticket.dueDate,
+                created: ticket.created,
+                sourceTicketId: ticket.id
+            )
+        }
     }
 
     /// Tasks after the "only mine" filter, best candidates first.
     var visibleTasks: [MoxieTask] {
-        let filtered = tasks.filter { task in
+        let items = tasks + (includeTickets ? ticketItems : [])
+        let filtered = items.filter { task in
             guard onlyMine, let me = myUserId else { return true }
             let assignees = task.assignedToList ?? []
             return assignees.isEmpty || assignees.contains(me)
@@ -50,6 +78,11 @@ final class TaskInbox {
             await resolveMe(api)
             let all = try await api.allTasks()
             tasks = all.filter { $0.isOpen && $0.isSubTask != true }
+            // Tickets are a bonus: if they fail to load, tasks still show.
+            if let open = try? await api.openTickets() {
+                tickets = open
+                if open.contains(where: { $0.client?.name == nil }) { await catalog.loadClients() }
+            }
             lastLoaded = .now
             lastError = nil
         } catch {
@@ -80,6 +113,16 @@ final class TaskInbox {
         )
         tasks.insert(task, at: 0)
         return task
+    }
+
+    /// Sets the ticket's status to the configured "done" label. Returns false if Moxie didn't confirm it.
+    func closeTicket(id: String) async throws -> Bool {
+        guard let api = settings.makeAPI() else { throw LogError.notConfigured }
+        let status = settings.ticketDoneStatus.trimmingCharacters(in: .whitespaces)
+        let updated = try await api.updateTicketStatus(id: id, status: status.isEmpty ? "Closed" : status)
+        tickets.removeAll { $0.id == id }
+        guard let updated else { return true }
+        return updated.open == false || updated.status?.caseInsensitiveCompare(status) == .orderedSame
     }
 
     /// Moves the task to its project type's "complete" stage. Returns false if Moxie didn't confirm it.

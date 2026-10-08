@@ -49,7 +49,10 @@ final class ActivityWatcher {
     @ObservationIgnored private var lastCheckIn: Date?
     @ObservationIgnored private var checkInShownAt: Date?
 
-    init(settings: AppSettings, timer: TimerStore, focus: FocusStore, history: HistoryStore) {
+    @ObservationIgnored private let stats: StatsStore
+
+    init(settings: AppSettings, timer: TimerStore, focus: FocusStore, history: HistoryStore, stats: StatsStore) {
+        self.stats = stats
         self.settings = settings
         self.timer = timer
         self.focus = focus
@@ -130,6 +133,7 @@ final class ActivityWatcher {
             onDriftNotify?()
         } else if drift < .visual {
             drift = .visual
+            stats.record { $0.drifts += 1 }
         }
     }
 
@@ -150,6 +154,7 @@ final class ActivityWatcher {
             focus.discardIdle(drifted)
         }
         lastWorkApp?.activate()
+        stats.record { $0.cameBack += 1 }
         resetDrift()
     }
 
@@ -194,6 +199,7 @@ final class ActivityWatcher {
         checkInDue = false
         lastCheckIn = .now
         if answer == .takeBreak { takeBreak() }
+        if answer == .yes { stats.record { $0.checkInsOnTask += 1 } }
     }
 
     // MARK: Not-tracking reminder

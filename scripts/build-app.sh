@@ -3,6 +3,8 @@
 #   --install    copy to /Applications and launch
 #   --universal  build for Apple Silicon + Intel
 # VERSION / BUILD_NUMBER env vars override the bundle version.
+# SIGN_IDENTITY (certificate SHA-1 or name) and optional SIGN_KEYCHAIN sign with a real certificate;
+# without them the app is ad-hoc signed.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -32,7 +34,13 @@ if [[ -n "${BUILD_NUMBER:-}" ]]; then
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${BUILD_NUMBER}" "$APP/Contents/Info.plist"
 fi
 
-codesign --force --sign - "$APP" >/dev/null
+if [[ -n "${SIGN_IDENTITY:-}" ]]; then
+  codesign --force --sign "$SIGN_IDENTITY" ${SIGN_KEYCHAIN:+--keychain "$SIGN_KEYCHAIN"} --timestamp=none "$APP"
+  codesign --verify --strict "$APP"
+  echo "Signed with $SIGN_IDENTITY"
+else
+  codesign --force --sign - "$APP" >/dev/null
+fi
 
 echo "Built $APP"
 

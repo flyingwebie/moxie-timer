@@ -25,6 +25,8 @@ struct RecentTab: View {
                 .help("Add a time entry manually")
             }
 
+            WeekChart()
+
             if history.entries.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "clock.badge.checkmark").font(.system(size: 26)).foregroundStyle(Theme.faint)
@@ -66,7 +68,7 @@ struct RecentTab: View {
                         }
                     }
                 }
-                .frame(height: 380)
+                .frame(height: 300)
             }
 
             Text("Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")

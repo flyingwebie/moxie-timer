@@ -44,6 +44,10 @@ struct MoxieTask: Codable, Identifiable, Hashable {
     var completed: String? = nil
     var archived: Bool? = nil
     var isSubTask: Bool? = nil
+    /// Set when this inbox item stands for a Moxie ticket rather than a task.
+    var sourceTicketId: String? = nil
+
+    var isTicket: Bool { sourceTicketId != nil }
 
     var isOpen: Bool { (completed ?? "").isEmpty && archived != true }
 
@@ -145,6 +149,11 @@ struct MoxieTicket: Codable, Identifiable, Hashable {
     let subject: String?
     let open: Bool?
     let status: String?
+    var clientId: String? = nil
+    var client: MoxieTask.Micro? = nil
+    var assignedTo: [Int]? = nil
+    var dueDate: String? = nil
+    var created: String? = nil
 
     var title: String {
         let subject = (subject?.isEmpty == false) ? subject! : "Untitled ticket"

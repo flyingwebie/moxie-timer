@@ -53,6 +53,8 @@ struct ReviewView: View {
                     .help("Add an entry")
             }
 
+            DayRecap()
+
             if pending.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(Theme.running)

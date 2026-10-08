@@ -75,6 +75,11 @@ final class AppSettings {
         didSet { defaults.set(distractionKeywords, forKey: "distractionKeywords") }
     }
 
+    /// Status set on a ticket when you finish it from the Focus tab.
+    var ticketDoneStatus: String {
+        didSet { defaults.set(ticketDoneStatus, forKey: "ticketDoneStatus") }
+    }
+
     /// "Still on it?" check-in interval while a timer runs; 0 = off.
     var checkInMinutes: Int {
         didSet { defaults.set(checkInMinutes, forKey: "checkInMinutes") }
@@ -114,6 +119,7 @@ final class AppSettings {
         distractionKeywords = defaults.stringArray(forKey: "distractionKeywords")
             ?? ["youtube", "reddit", "facebook", "instagram", "netflix", "tiktok", "twitch"]
         checkInMinutes = defaults.object(forKey: "checkInMinutes") as? Int ?? 20
+        ticketDoneStatus = defaults.string(forKey: "ticketDoneStatus") ?? "Closed"
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

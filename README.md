@@ -52,6 +52,15 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - **Check-ins:** every 20 min (configurable or off) a small bubble under the pill asks "Still on *task*?" —
   Yes / Switch task / Break. It disappears on its own after a minute.
 
+### Progress you can see
+
+- **Today strip** on the Focus tab: focus blocks finished, focus minutes, tasks done and your focus streak (days in a row
+  with at least one finished block).
+- **This week** chart in Recent: tracked time per day with the focused part highlighted.
+- **Day recap** at the top of the end-of-day review.
+- **Tickets** appear next to tasks in the focus inbox (toggle in All tasks). Focusing on a ticket reuses the last project
+  you logged for that client; **Close ticket** logs the time and sets the ticket status chosen in Settings (default "Closed").
+
 AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
 Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.
 
@@ -95,6 +104,15 @@ Pauses are left out of the logged time. An entry is saved as one block that ends
 Endpoints used: `clients/list`, `projects/search`, `tasks/list`, `tasks/create`, `tasks/update`, `taskStages/list`, `tickets/list`, `users/list`, `timeWorked/create`.
 
 Marking a task complete sets it to the project type's "complete" stage via `tasks/update`. That endpoint accepts any task fields but isn't fully documented, so the app checks Moxie's reply and tells you if the change wasn't confirmed.
+
+## Signing & local data
+
+Releases are signed with a stable self-signed certificate (kept as an encrypted GitHub secret), so macOS keeps the app's
+Keychain and Accessibility permissions across updates, and the updater only installs updates signed with that same
+certificate. Local builds without the certificate are ad-hoc signed. The app is not notarized.
+
+Local entries (`~/Library/Application Support/MoxieTimer/history.json`) are backed up once a day, keeping 14 days;
+restore from Settings → Local data. Restoring merges missing entries back without overwriting newer ones.
 
 ## Updates
 

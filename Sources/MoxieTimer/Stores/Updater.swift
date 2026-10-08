@@ -1,5 +1,6 @@
 import AppKit
 import CryptoKit
+import Security
 import Observation
 
 /// Self-updater backed by GitHub Releases. Checks `releases/latest`, and if the tag is newer than the
@@ -153,6 +154,12 @@ final class Updater {
                   bundle.bundleIdentifier == Bundle.main.bundleIdentifier else {
                 throw UpdateError("The download doesn't contain Moxie Timer.")
             }
+            // Once this app is signed with a real certificate, only accept updates signed by the same one.
+            if let current = Self.signingCertificate(of: Bundle.main.bundleURL) {
+                guard Self.hasValidSignature(newApp), Self.signingCertificate(of: newApp) == current else {
+                    throw UpdateError("The update isn't signed with Moxie Timer's certificate, so it wasn't installed.")
+                }
+            }
             try? await Self.run("/usr/bin/xattr", ["-dr", "com.apple.quarantine", newApp.path])
 
             _ = try fileManager.replaceItemAt(appURL, withItemAt: newApp)
@@ -177,6 +184,25 @@ final class Updater {
     }
 
     // MARK: Helpers
+
+    /// DER data of the leaf signing certificate; nil for ad-hoc or unsigned code.
+    static func signingCertificate(of url: URL) -> Data? {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return nil }
+        var info: CFDictionary?
+        guard SecCodeCopySigningInformation(code, SecCSFlags(rawValue: kSecCSSigningInformation), &info) == errSecSuccess,
+              let dict = info as? [String: Any],
+              let certificates = dict[kSecCodeInfoCertificates as String] as? [SecCertificate],
+              let leaf = certificates.first else { return nil }
+        return SecCertificateCopyData(leaf) as Data
+    }
+
+    /// The bundle's signature is intact and satisfies its own designated requirement.
+    static func hasValidSignature(_ url: URL) -> Bool {
+        var code: SecStaticCode?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return false }
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), nil) == errSecSuccess
+    }
 
     static func isVersion(_ candidate: String, newerThan current: String) -> Bool {
         let a = candidate.split(separator: ".").map { Int($0) ?? 0 }

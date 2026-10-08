@@ -125,6 +125,10 @@ struct SettingsView: View {
 
             Divider()
 
+            DataSettingsSection()
+
+            Divider()
+
             UpdatesSection()
 
             Divider()

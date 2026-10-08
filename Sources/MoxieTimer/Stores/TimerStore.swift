@@ -133,6 +133,11 @@ final class TimerStore {
 
     var holdsForReview: Bool { settings.holdForReview }
 
+    /// The project most recently logged for a client, to prefill work that has no project (tickets).
+    func lastProject(forClient clientId: String) -> Ref? {
+        history.entries.first { $0.draft.client?.id == clientId && $0.draft.project != nil }?.draft.project
+    }
+
     /// Records a block of time: held locally in review mode, otherwise sent to Moxie straight away.
     func log(start: Date, end: Date, draft: EntryDraft) async throws -> LoggedEntry {
         // Moxie stores whole seconds; drop sub-second noise so start/end match what we display.

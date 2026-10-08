@@ -52,6 +52,21 @@ struct MoxieAPI: Sendable {
         ])
     }
 
+    /// Open tickets across all clients.
+    func openTickets() async throws -> [MoxieTicket] {
+        try await getList("public/action/tickets/list", query: [
+            URLQueryItem(name: "open", value: "true"),
+            URLQueryItem(name: "archived", value: "false"),
+        ])
+    }
+
+    /// `PATCH tickets/status` — sets the workflow status label (e.g. "Closed").
+    func updateTicketStatus(id: String, status: String) async throws -> MoxieTicket? {
+        let body = try JSONEncoder().encode(["id": id, "status": status])
+        let data = try await send("public/action/tickets/status", method: "PATCH", body: body)
+        return try? JSONDecoder().decode(MoxieTicket.self, from: data)
+    }
+
     /// Every task in the workspace (optionally limited to one client); the caller filters to open ones.
     func allTasks(clientId: String? = nil) async throws -> [MoxieTask] {
         var query = [URLQueryItem(name: "archived", value: "false")]

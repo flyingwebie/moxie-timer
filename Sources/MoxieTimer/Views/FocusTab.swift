@@ -39,6 +39,8 @@ struct FocusTab: View {
 
     private var chooseView: some View {
         VStack(alignment: .leading, spacing: 14) {
+            TodayStrip()
+
             VStack(alignment: .leading, spacing: 4) {
                 Text("What's the one thing?")
                     .font(.system(size: 20, weight: .bold))
@@ -123,6 +125,7 @@ struct FocusTab: View {
         if !context.isEmpty { parts.append(context) }
         if let due = task.due { parts.append("due \(due.formatted(date: .abbreviated, time: .omitted))") }
         if let priority = task.taskPriority { parts.append("priority \(priority)") }
+        if task.isTicket { parts.append("client support ticket") }
         return parts.joined(separator: " — ")
     }
 
@@ -311,12 +314,12 @@ struct FocusTab: View {
                 }
                 .buttonStyle(ChipButtonStyle())
                 .help("Log the time to Moxie and leave the task open")
-                if target.taskId != nil {
+                if target.taskId != nil || target.ticketId != nil {
                     Button { Task { await focus.finish(markComplete: true) } } label: {
-                        Label("Task done", systemImage: "checkmark").frame(maxWidth: .infinity)
+                        Label(target.ticketId != nil ? "Close ticket" : "Task done", systemImage: "checkmark").frame(maxWidth: .infinity)
                     }
                     .buttonStyle(PrimaryButtonStyle())
-                    .help("Log the time and mark the task complete in Moxie")
+                    .help(target.ticketId != nil ? "Log the time and set the ticket's status in Moxie" : "Log the time and mark the task complete in Moxie")
                 }
             }
             .disabled(focus.isFinishing)
@@ -334,9 +337,17 @@ struct TaskRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                Circle()
-                    .fill(priorityColor)
-                    .frame(width: 8, height: 8)
+                if task.isTicket {
+                    Image(systemName: "ticket")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.warmup)
+                        .frame(width: 10)
+                } else {
+                    Circle()
+                        .fill(priorityColor)
+                        .frame(width: 8, height: 8)
+                        .frame(width: 10)
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(task.name)
                         .font(.system(size: 13, weight: .medium))

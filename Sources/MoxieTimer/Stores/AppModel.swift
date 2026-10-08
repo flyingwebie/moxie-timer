@@ -60,6 +60,7 @@ final class AppModel {
 
     let settings: AppSettings
     let history: HistoryStore
+    let stats = StatsStore()
     let catalog: Catalog
     let timer: TimerStore
     let ui = WidgetUI()
@@ -76,9 +77,9 @@ final class AppModel {
         history = HistoryStore()
         catalog = Catalog(settings: settings)
         timer = TimerStore(settings: settings, history: history)
-        inbox = TaskInbox(settings: settings)
-        focus = FocusStore(timer: timer, inbox: inbox)
+        inbox = TaskInbox(settings: settings, catalog: catalog)
+        focus = FocusStore(timer: timer, inbox: inbox, stats: stats)
         idle = IdleMonitor(timer: timer, focus: focus)
-        activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history)
+        activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history, stats: stats)
     }
 }
