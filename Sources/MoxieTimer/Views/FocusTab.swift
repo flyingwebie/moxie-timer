@@ -80,10 +80,17 @@ struct FocusTab: View {
                     }
             }
 
+            InboxFilterBar()
+
             let upNext = Array(inbox.visibleTasks.prefix(4))
+            if upNext.isEmpty, inbox.isFiltered, !inbox.isLoading {
+                Text("No open tasks for this filter.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.muted)
+            }
             if !upNext.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
-                    CapsLabel("Up next")
+                    CapsLabel(inbox.isFiltered ? "Up next · filtered" : "Up next")
                     ForEach(upNext) { task in
                         TaskRow(task: task) { Task { await focus.select(task) } }
                     }

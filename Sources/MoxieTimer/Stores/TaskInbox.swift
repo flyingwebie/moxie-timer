@@ -24,12 +24,43 @@ final class TaskInbox {
         didSet { UserDefaults.standard.set(includeTickets, forKey: "inboxIncludeTickets") }
     }
 
+    /// Optional client / project filter for the inbox, "Up next" and "Pick for me".
+    var filterClient: Ref? {
+        didSet {
+            if filterClient?.id != oldValue?.id { filterProject = nil }
+            UserDefaults.standard.set(filterClient.flatMap { try? JSONEncoder().encode($0) }, forKey: "inboxFilterClient")
+        }
+    }
+
+    var filterProject: Ref? {
+        didSet { UserDefaults.standard.set(filterProject.flatMap { try? JSONEncoder().encode($0) }, forKey: "inboxFilterProject") }
+    }
+
+    var isFiltered: Bool { filterClient != nil || filterProject != nil }
+
+    /// Clients that have open items (after "only mine" / tickets), with counts, for the filter menu.
+    var filterClients: [(ref: Ref, count: Int)] {
+        let grouped = Dictionary(grouping: baseItems.compactMap(\.clientRef), by: \.id)
+        return grouped.values.map { ($0[0], $0.count) }
+            .sorted { $0.ref.name.localizedCaseInsensitiveCompare($1.ref.name) == .orderedAscending }
+    }
+
+    /// Projects with open tasks, limited to the chosen client.
+    var filterProjects: [(ref: Ref, count: Int)] {
+        let items = baseItems.filter { filterClient == nil || $0.clientRef?.id == filterClient?.id }
+        let grouped = Dictionary(grouping: items.compactMap(\.projectRef), by: \.id)
+        return grouped.values.map { ($0[0], $0.count) }
+            .sorted { $0.ref.name.localizedCaseInsensitiveCompare($1.ref.name) == .orderedAscending }
+    }
+
     @ObservationIgnored private let catalog: Catalog
 
     init(settings: AppSettings, catalog: Catalog) {
         self.settings = settings
         self.catalog = catalog
         onlyMine = UserDefaults.standard.object(forKey: "inboxOnlyMine") as? Bool ?? true
+        filterClient = UserDefaults.standard.data(forKey: "inboxFilterClient").flatMap { try? JSONDecoder().decode(Ref.self, from: $0) }
+        filterProject = UserDefaults.standard.data(forKey: "inboxFilterProject").flatMap { try? JSONDecoder().decode(Ref.self, from: $0) }
         includeTickets = UserDefaults.standard.object(forKey: "inboxIncludeTickets") as? Bool ?? true
     }
 
@@ -52,13 +83,22 @@ final class TaskInbox {
 
     /// Tasks after the "only mine" filter, best candidates first.
     var visibleTasks: [MoxieTask] {
+        let filtered = baseItems.filter { task in
+            if let client = filterClient, task.clientRef?.id != client.id { return false }
+            if let project = filterProject, task.projectRef?.id != project.id { return false }
+            return true
+        }
+        return TaskInbox.ranked(filtered, now: .now)
+    }
+
+    /// Open tasks (+ tickets) after "only mine", before the client/project filter.
+    private var baseItems: [MoxieTask] {
         let items = tasks + (includeTickets ? ticketItems : [])
-        let filtered = items.filter { task in
+        return items.filter { task in
             guard onlyMine, let me = myUserId else { return true }
             let assignees = task.assignedToList ?? []
             return assignees.isEmpty || assignees.contains(me)
         }
-        return TaskInbox.ranked(filtered, now: .now)
     }
 
     func refreshIfStale() async {

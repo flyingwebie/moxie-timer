@@ -20,6 +20,7 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 
 ### Focus mode (built for ADHD brains)
 
+- **Filter by client or project:** chips above Up next and in All tasks narrow the inbox (and Pick for me) to one client and/or project; remembered until cleared.
 - **One thing at a time:** the Focus tab shows a single task and a big Start button. Your open Moxie tasks are ranked by overdue/due-soon, priority and age; **Pick for me** chooses one (with AI if enabled).
 - **Tiny first step:** write, or let AI suggest, a 2-minute first action. It stays visible while you work.
 - **Adaptive focus blocks:** each block starts with a 5-minute warm-up. The suggested length grows by 5 min after a block you finish and shrinks after one you stop before halfway (15–90 min).

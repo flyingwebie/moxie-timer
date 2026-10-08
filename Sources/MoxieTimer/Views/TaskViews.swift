@@ -50,6 +50,8 @@ struct TaskListView: View {
             .controlSize(.mini)
             .font(.system(size: 12))
 
+            InboxFilterBar()
+
             if let error = inbox.lastError {
                 ErrorBanner(message: error) { inbox.lastError = nil }
             }
@@ -308,5 +310,73 @@ struct CaptureView: View {
                 self.error = error.localizedDescription
             }
         }
+    }
+}
+
+/// "Client ▾  Project ▾" filter chips for the inbox. Lists only clients/projects with open items.
+struct InboxFilterBar: View {
+    @Environment(TaskInbox.self) private var inbox
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "line.3.horizontal.decrease")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(inbox.isFiltered ? Theme.navy : Theme.faint)
+            Menu {
+                Button("All clients") { inbox.filterClient = nil }
+                Divider()
+                ForEach(inbox.filterClients, id: \.ref.id) { item in
+                    Button("\(item.ref.name)  (\(item.count))") { inbox.filterClient = item.ref }
+                }
+            } label: {
+                chip(inbox.filterClient?.name ?? "All clients", active: inbox.filterClient != nil)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+
+            Menu {
+                Button("All projects") { inbox.filterProject = nil }
+                Divider()
+                ForEach(inbox.filterProjects, id: \.ref.id) { item in
+                    Button("\(item.ref.name)  (\(item.count))") {
+                        inbox.filterProject = item.ref
+                    }
+                }
+            } label: {
+                chip(inbox.filterProject?.name ?? "All projects", active: inbox.filterProject != nil)
+            }
+            .menuStyle(.button)
+            .buttonStyle(.plain)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .disabled(inbox.filterProjects.isEmpty)
+
+            if inbox.isFiltered {
+                Button {
+                    inbox.filterClient = nil
+                    inbox.filterProject = nil
+                } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundStyle(Theme.faint)
+                }
+                .buttonStyle(.plain)
+                .help("Clear filter")
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func chip(_ title: String, active: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(title).lineLimit(1).truncationMode(.tail).frame(maxWidth: 110, alignment: .leading)
+            Image(systemName: "chevron.down").font(.system(size: 8, weight: .bold))
+        }
+        .font(.system(size: 11, weight: active ? .semibold : .regular))
+        .foregroundStyle(active ? Theme.navy : Theme.ink.opacity(0.75))
+        .padding(.horizontal, 8)
+        .frame(height: 22)
+        .background(Capsule().fill(active ? Theme.navy.opacity(0.1) : .white))
+        .overlay(Capsule().strokeBorder(active ? Theme.navy.opacity(0.4) : Theme.border))
     }
 }
