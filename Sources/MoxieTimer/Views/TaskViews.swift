@@ -166,27 +166,48 @@ struct CaptureView: View {
                     .onSubmit { save(focusNow: false) }
             }
 
-            VStack(alignment: .leading, spacing: 0) {
-                SearchPicker(
-                    icon: "person.2", placeholder: "No client",
-                    selection: draft.client?.name, items: catalog.clients, title: \.name,
-                    isLoading: catalog.isLoading("clients"),
-                    onOpen: { await catalog.loadClients() },
-                    onRefresh: { await catalog.loadClients(force: true) },
-                    onSelect: { client in draft.setClient(client.map { Ref(id: $0.id, name: $0.name) }) }
-                )
-                Divider()
-                SearchPicker(
-                    icon: "folder", placeholder: "No project",
-                    selection: draft.project?.name,
-                    items: draft.client.flatMap { catalog.projectsByClient[$0.id] } ?? [], title: \.name,
-                    badge: { $0.isActive ? nil : "Completed" },
-                    isLoading: draft.client.map { catalog.isLoading("projects:\($0.id)") } ?? false,
-                    disabled: draft.client == nil,
-                    onOpen: { if let c = draft.client { await catalog.loadProjects(for: c) } },
-                    onRefresh: { if let c = draft.client { await catalog.loadProjects(for: c, force: true) } },
-                    onSelect: { project in draft.setProject(project.map { Ref(id: $0.id, name: $0.name) }) }
-                )
+            VStack(alignment: .leading, spacing: 10) {
+                if draft.client == nil, let current = currentLink {
+                    Button {
+                        draft.setClient(current.client)
+                        if let project = current.project { draft.setProject(project) }
+                    } label: {
+                        Label("Use current: \([current.client.name, current.project?.name].compactMap { $0 }.joined(separator: " · "))",
+                              systemImage: "link")
+                            .lineLimit(1)
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                }
+
+                linkField("Client") {
+                    SearchPicker(
+                        icon: "person.2", placeholder: "No client",
+                        selection: draft.client?.name, items: catalog.clients, title: \.name,
+                        isLoading: catalog.isLoading("clients"),
+                        onOpen: { await catalog.loadClients() },
+                        onRefresh: { await catalog.loadClients(force: true) },
+                        onSelect: { client in
+                            draft.setClient(client.map { Ref(id: $0.id, name: $0.name) })
+                            if let ref = draft.client { Task { await catalog.loadProjects(for: ref) } }
+                        }
+                    )
+                }
+                linkField("Project") {
+                    SearchPicker(
+                        icon: "folder", placeholder: draft.client == nil ? "Pick a client first" : "No project",
+                        selection: draft.project?.name,
+                        items: draft.client.flatMap { catalog.projectsByClient[$0.id] } ?? [], title: \.name,
+                        badge: { $0.isActive ? nil : "Completed" },
+                        isLoading: draft.client.map { catalog.isLoading("projects:\($0.id)") } ?? false,
+                        disabled: draft.client == nil,
+                        onOpen: { if let c = draft.client { await catalog.loadProjects(for: c) } },
+                        onRefresh: { if let c = draft.client { await catalog.loadProjects(for: c, force: true) } },
+                        onSelect: { project in draft.setProject(project.map { Ref(id: $0.id, name: $0.name) }) }
+                    )
+                }
+                Text("Leave both empty to add the task without a client or project.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
             }
 
             HStack(spacing: 6) {
@@ -229,7 +250,27 @@ struct CaptureView: View {
             nameFocused = true
             guard !didPrefill else { return }
             didPrefill = true
-            draft = timer.draft.reusable
+            // Start unlinked; the timer's client/project is offered as a one-click chip instead.
+            draft = EntryDraft()
+        }
+    }
+
+    /// The client/project the timer is currently on, offered as a shortcut.
+    private var currentLink: (client: Ref, project: Ref?)? {
+        guard let client = timer.draft.client else { return nil }
+        return (client, timer.draft.project)
+    }
+
+    private func linkField<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 4) {
+                CapsLabel(label)
+                Text("· optional").font(.system(size: 10)).foregroundStyle(Theme.faint)
+            }
+            content()
+                .padding(.horizontal, 12)
+                .background(RoundedRectangle(cornerRadius: 10).fill(Theme.cream))
+                .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.border))
         }
     }
 
