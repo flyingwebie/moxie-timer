@@ -2,6 +2,10 @@ import SwiftUI
 
 /// End-of-day review: check held entries, fill gaps, fix categories, then send everything to Moxie at once.
 struct ReviewView: View {
+    /// Gaps are untracked stretches inside your work hours; they can be hidden or dismissed one by one.
+    @AppStorage("reviewShowGaps") private var showGaps = true
+    @AppStorage("reviewDismissedGaps") private var dismissedGaps = ""
+    @State private var sendingIds: Set<String> = []
     @Environment(HistoryStore.self) private var history
     @Environment(TimerStore.self) private var timer
     @Environment(AppSettings.self) private var settings
@@ -55,6 +59,14 @@ struct ReviewView: View {
 
             DayRecap()
 
+            HStack {
+                Toggle("Show untracked gaps", isOn: $showGaps)
+                    .toggleStyle(.switch).tint(Theme.navy).controlSize(.mini)
+                    .font(.system(size: 11))
+                    .help("Gaps are parts of your work hours (Settings → Review & reminders) that no entry covers.")
+                Spacer()
+            }
+
             if pending.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "checkmark.circle").font(.system(size: 28)).foregroundStyle(Theme.running)
@@ -78,7 +90,8 @@ struct ReviewView: View {
                                 ForEach(day.items) { item in
                                     switch item {
                                     case let .entry(entry): entryRow(entry)
-                                    case let .gap(start, end): gapRow(start, end)
+                                    case let .gap(start, end):
+                                        if showGaps, !dismissedGaps.contains(gapKey(start)) { gapRow(start, end) }
                                     }
                                 }
                             } header: {
@@ -96,7 +109,7 @@ struct ReviewView: View {
                         }
                     }
                 }
-                .frame(height: 360)
+                .frame(height: 440)
             }
 
             if let result {
@@ -168,8 +181,28 @@ struct ReviewView: View {
                     }
                 }
                 Spacer(minLength: 4)
-                Text(DurationFormat.clock(entry.duration))
-                    .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(DurationFormat.clock(entry.duration))
+                        .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                    if entry.hasCategory {
+                        Button { Task { await sendOne(entry) } } label: {
+                            Group {
+                                if sendingIds.contains(entry.id) {
+                                    ProgressView().controlSize(.mini)
+                                } else {
+                                    Label("Send", systemImage: "paperplane.fill").font(.system(size: 10, weight: .semibold))
+                                }
+                            }
+                            .foregroundStyle(Theme.navy)
+                            .padding(.horizontal, 7)
+                            .frame(height: 20)
+                            .background(Capsule().fill(Theme.navy.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!sendingIds.isEmpty || timer.isSending)
+                        .help("Send just this entry to Moxie now")
+                    }
+                }
                     .foregroundStyle(Theme.ink)
             }
             .padding(.vertical, 8)
@@ -183,25 +216,50 @@ struct ReviewView: View {
     }
 
     private func gapRow(_ start: Date, _ end: Date) -> some View {
-        Button {
-            ui.editorSeed = .init(start: start, end: end, returnTo: .review)
-            ui.route = .addEntry
-        } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "plus.circle")
-                Text("Untracked \(start.formatted(date: .omitted, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened)) · \(DurationFormat.short(end.timeIntervalSince(start)))")
-                Spacer()
-                Text("Fill").fontWeight(.semibold)
+        HStack(spacing: 6) {
+            Button {
+                ui.editorSeed = .init(start: start, end: end, returnTo: .review)
+                ui.route = .addEntry
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "plus.circle")
+                    Text("Gap \(start.formatted(date: .omitted, time: .shortened))–\(end.formatted(date: .omitted, time: .shortened)) · \(DurationFormat.short(end.timeIntervalSince(start)))")
+                    Spacer()
+                    Text("Fill").fontWeight(.semibold)
+                }
+                .contentShape(Rectangle())
             }
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.muted)
-            .padding(.vertical, 7)
-            .padding(.horizontal, 8)
-            .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
-            .padding(.vertical, 2)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .help("No entry covers this part of your work hours. Fill it if you worked, or hide it.")
+            Button {
+                dismissedGaps += "|" + gapKey(start)
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Hide this gap (lunch, a break…)")
         }
-        .buttonStyle(.plain)
+        .font(.system(size: 11))
+        .foregroundStyle(Theme.muted)
+        .padding(.vertical, 7)
+        .padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+        .padding(.vertical, 2)
+    }
+
+    private func gapKey(_ start: Date) -> String { "\(Int(start.timeIntervalSince1970))" }
+
+    private func sendOne(_ entry: LoggedEntry) async {
+        sendingIds.insert(entry.id)
+        defer { sendingIds.remove(entry.id) }
+        do {
+            try await timer.send(entry)
+            result = "Sent \(DurationFormat.short(entry.duration)) for \(entry.draft.client?.name ?? "entry") to Moxie." + (timer.notice.map { " " + $0 } ?? "")
+        } catch {
+            var held = entry
+            held.sendError = error.localizedDescription
+            history.update(held)
+        }
     }
 
     /// Held entries per day, with gaps against everything logged that day (held or already sent).

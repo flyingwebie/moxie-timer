@@ -50,6 +50,8 @@ final class PetStore {
         var mood: Double = 60
         var day: String = ""
         var saidHello = false
+        /// Optional so state saved by older versions still decodes. Set once past stats are counted as XP.
+        var seeded: Bool?
     }
 
     private struct Snapshot {
@@ -117,6 +119,12 @@ final class PetStore {
         }
         mood = state.mood
         xp = state.xp
+        if state.seeded != true {
+            // XP used to count only what happened after the pet arrived; include earlier focus once.
+            xp = max(xp, Self.xp(fromHistory: stats))
+            state.seeded = true
+            save()
+        }
 
         let ticker = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.tick() }
@@ -135,6 +143,15 @@ final class PetStore {
         while Self.xp(forLevel: level + 1) <= xp { level += 1 }
         return level
     }
+
+    /// XP implied by all recorded stats: 1 per focused minute plus the same bonuses as live events.
+    static func xp(fromHistory stats: StatsStore) -> Double {
+        stats.days.values.reduce(0) { total, day in
+            total + day.focusSeconds / 60 + Double(day.blocksCompleted * 10 + day.tasksDone * 20 + day.cameBack * 5 + day.checkInsOnTask * 2)
+        }
+    }
+
+    var xpForNextLevel: Double { Self.xp(forLevel: level + 1) }
 
     // MARK: Tick
 

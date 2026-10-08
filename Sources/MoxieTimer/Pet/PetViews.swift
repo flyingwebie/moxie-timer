@@ -84,7 +84,7 @@ struct PetCard: View {
             }
 
             meter("Mood", value: pet.mood / 100, color: pet.mood >= 70 ? Theme.running : (pet.mood >= 40 ? Theme.warmup : Theme.onBreak))
-            meter("Next level", value: pet.progressToNext, color: Theme.navy)
+            meter("Next level · \(Int(pet.xp)) / \(Int(pet.xpForNextLevel)) XP", value: pet.progressToNext, color: Theme.navy)
             if let next = pet.nextUnlock {
                 Text("Level \(next.unlockLevel) unlocks: \(next.title)")
                     .font(.system(size: 11))
@@ -108,13 +108,30 @@ struct PetCard: View {
                 .labelsHidden()
                 .frame(width: 140)
             }
-            Text("Focus, finished blocks, done tasks and comebacks raise \(settings.petName)'s mood and XP. Drifting makes it sad.")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.faint)
-                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                CapsLabel("How to make \(settings.petName) happy")
+                guide("timer", "Focus in a block (Focus tab)", "+1 XP / min")
+                guide("scope", "Finish a focus block", "+10 XP")
+                guide("checkmark.circle", "Complete a task or ticket", "+20 XP")
+                guide("arrow.uturn.backward", "Come back after drifting", "+5 XP")
+                guide("hand.thumbsup", "Answer “Yes” at check-ins", "+2 XP")
+                Text("Its face shows what's happening now: worried when you drift or forget the timer, asleep on breaks.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16)
         .frame(width: 280)
+    }
+
+    private func guide(_ icon: String, _ text: String, _ reward: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon).font(.system(size: 10)).foregroundStyle(Theme.navy).frame(width: 14)
+            Text(text).font(.system(size: 11)).foregroundStyle(Theme.ink)
+            Spacer(minLength: 4)
+            Text(reward).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.running)
+        }
     }
 
     private var moodWord: String {

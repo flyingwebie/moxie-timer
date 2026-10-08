@@ -316,6 +316,7 @@ struct CaptureView: View {
 /// "Client ▾  Project ▾" filter chips for the inbox. Lists only clients/projects with open items.
 struct InboxFilterBar: View {
     @Environment(TaskInbox.self) private var inbox
+    @Environment(Catalog.self) private var catalog
 
     var body: some View {
         HStack(spacing: 6) {
@@ -364,6 +365,22 @@ struct InboxFilterBar: View {
                 .help("Clear filter")
             }
             Spacer(minLength: 0)
+            if inbox.isLoading || catalog.isLoading("clients") {
+                ProgressView().controlSize(.mini)
+            } else {
+                Button {
+                    Task {
+                        // Clients/projects/tickets caches are dropped so pickers reload them too.
+                        catalog.reset()
+                        await catalog.loadClients(force: true)
+                        await inbox.refresh()
+                    }
+                } label: {
+                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
+                }
+                .buttonStyle(.plain)
+                .help("Reload clients, projects, tasks and tickets from Moxie")
+            }
         }
     }
 

@@ -164,6 +164,7 @@ struct FocusTab: View {
                     if let due = target.due.flatMap({ MoxieTask.dayFormatter.date(from: String($0.prefix(10))) }) {
                         DueBadge(date: due)
                     }
+                    KindBadge(isTicket: target.ticketId != nil, isOwn: target.taskId == nil && target.ticketId == nil)
                 }
                 if let reason = focus.pickReason {
                     Label(reason, systemImage: "sparkles")
@@ -358,39 +359,78 @@ struct FocusTab: View {
 struct TaskRow: View {
     let task: MoxieTask
     let action: () -> Void
+    @Environment(FocusStore.self) private var focus
+    @State private var hovering = false
+    @State private var confirming = false
+    @State private var working = false
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 10) {
-                if task.isTicket {
-                    Image(systemName: "ticket")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.warmup)
-                        .frame(width: 10)
-                } else {
+        HStack(spacing: 6) {
+            Button(action: action) {
+                HStack(spacing: 10) {
                     Circle()
-                        .fill(priorityColor)
+                        .fill(task.isTicket ? Theme.warmup : priorityColor)
                         .frame(width: 8, height: 8)
                         .frame(width: 10)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(task.name)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.ink)
-                        .lineLimit(1)
-                    let context = [task.client?.name, task.project?.name].compactMap { $0 }.joined(separator: " · ")
-                    if !context.isEmpty {
-                        Text(context).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(task.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(Theme.ink)
+                            .lineLimit(1)
+                        HStack(spacing: 5) {
+                            KindBadge(isTicket: task.isTicket)
+                            let context = [task.client?.name, task.project?.name].compactMap { $0 }.joined(separator: " · ")
+                            if !context.isEmpty {
+                                Text(context).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
+                            }
+                        }
                     }
+                    Spacer(minLength: 4)
+                    if let due = task.due, !(hovering || confirming) { DueBadge(date: due) }
                 }
-                Spacer(minLength: 4)
-                if let due = task.due { DueBadge(date: due) }
+                .padding(.leading, 8)
+                .padding(.vertical, 7)
+                .contentShape(Rectangle())
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 7)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+
+            if hovering || confirming || working {
+                Button {
+                    if confirming {
+                        working = true
+                        Task {
+                            await focus.complete(task)
+                            working = false
+                            confirming = false
+                        }
+                    } else {
+                        confirming = true
+                    }
+                } label: {
+                    Group {
+                        if working {
+                            ProgressView().controlSize(.mini)
+                        } else if confirming {
+                            Text(task.isTicket ? "Close?" : "Done?").font(.system(size: 10, weight: .bold))
+                        } else {
+                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                        }
+                    }
+                    .foregroundStyle(confirming ? .white : Theme.running)
+                    .padding(.horizontal, 7)
+                    .frame(height: 22)
+                    .background(Capsule().fill(confirming ? Theme.running : Theme.running.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help(task.isTicket ? "Close this ticket in Moxie (click twice)" : "Mark this task complete in Moxie (click twice)")
+            }
         }
-        .buttonStyle(HoverRowStyle())
+        .padding(.trailing, 6)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.cream.opacity(hovering ? 1 : 0)))
+        .onHover { inside in
+            hovering = inside
+            if !inside, !working { confirming = false }
+        }
     }
 
     private var priorityColor: Color {
@@ -539,5 +579,23 @@ struct SuggestionChip: View {
             }
             .buttonStyle(.plain)
         }
+    }
+}
+
+/// TASK / TICKET / OWN label so it's always clear what you're working on.
+struct KindBadge: View {
+    let isTicket: Bool
+    var isOwn = false
+
+    var body: some View {
+        let (text, color): (String, Color) = isOwn ? ("OWN", Theme.muted) : (isTicket ? ("TICKET", Theme.warmup) : ("TASK", Theme.navy))
+        Text(text)
+            .font(.system(size: 8.5, weight: .heavy))
+            .tracking(0.5)
+            .foregroundStyle(color)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(Capsule().fill(color.opacity(0.12)))
+            .help(isOwn ? "Something you typed — not a Moxie task" : (isTicket ? "Moxie ticket" : "Moxie task"))
     }
 }

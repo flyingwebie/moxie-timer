@@ -301,6 +301,28 @@ final class FocusStore {
         NSSound(named: "Hero")?.play()
     }
 
+    /// Completes a task (or closes a ticket) straight from a list, without focusing on it.
+    func complete(_ task: MoxieTask) async {
+        do {
+            let confirmed: Bool
+            if let ticketId = task.sourceTicketId {
+                confirmed = try await inbox.closeTicket(id: ticketId)
+            } else {
+                confirmed = try await inbox.markComplete(task)
+            }
+            stats.record { $0.tasksDone += 1 }
+            if target?.taskId == task.id || (task.sourceTicketId != nil && target?.ticketId == task.sourceTicketId), block == nil {
+                target = nil
+            }
+            banner = confirmed
+                ? "“\(task.name)” \(task.isTicket ? "closed" : "marked complete") in Moxie ✓"
+                : "Sent to Moxie, but it didn't confirm “\(task.name)” — check it there."
+            NSSound(named: "Hero")?.play()
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
     // MARK: Breaks
 
     func startBreak() {
