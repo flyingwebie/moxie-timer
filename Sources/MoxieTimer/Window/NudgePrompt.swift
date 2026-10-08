@@ -55,6 +55,85 @@ struct NudgePromptView: View {
     let close: () -> Void
 
     var body: some View {
+        Group {
+            if activity.promptKind == .drift {
+                driftContent
+            } else {
+                notTrackingContent
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.onBreak.opacity(0.5), lineWidth: 1.5))
+        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
+        .padding(30)
+    }
+
+    // MARK: Drifting to a distraction while the timer runs
+
+    private var driftContent: some View {
+        let minutes = max(1, Int((Date.now.timeIntervalSince(activity.driftSince ?? .now) / 60).rounded()))
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 10) {
+                Image(systemName: "arrow.uturn.backward.circle.fill")
+                    .font(.system(size: 22))
+                    .foregroundStyle(Theme.onBreak)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Back to “\(activity.currentTaskName)”?")
+                        .font(.system(size: 17, weight: .bold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(2)
+                    Text("You've been on \(activity.driftLabel ?? "something else") for \(minutes) min while the timer runs.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                }
+            }
+
+            Button {
+                activity.backToWork(dropDrift: false)
+                close()
+            } label: { Text("Back to it").frame(maxWidth: .infinity) }
+                .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+
+            HStack(spacing: 8) {
+                Button {
+                    activity.backToWork(dropDrift: true)
+                    close()
+                } label: { Text("Back, drop \(minutes) min").frame(maxWidth: .infinity) }
+                    .buttonStyle(ChipButtonStyle())
+                    .help("Return to work and remove the drifted time from the timer")
+                Button {
+                    activity.takeBreak()
+                    close()
+                } label: { Text("Take a break").frame(maxWidth: .infinity) }
+                    .buttonStyle(ChipButtonStyle())
+            }
+
+            HStack {
+                Button("It's for work — allow 15 min") {
+                    activity.allowForWork()
+                    close()
+                }
+                Spacer()
+                Button("Switch task") {
+                    activity.allowForWork()
+                    close()
+                    ui.tab = .focus
+                    ui.onVisibilityRequest?(true)
+                    ui.expand(route: .tasks)
+                }
+            }
+            .buttonStyle(.plain)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(Theme.muted)
+        }
+    }
+
+    // MARK: Working with no timer running
+
+    private var notTrackingContent: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
                 Image(systemName: "stopwatch")
@@ -121,12 +200,6 @@ struct NudgePromptView: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Theme.muted)
         }
-        .padding(20)
-        .frame(width: 400)
-        .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(.white))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Theme.onBreak.opacity(0.5), lineWidth: 1.5))
-        .shadow(color: .black.opacity(0.25), radius: 20, y: 8)
-        .padding(30)
     }
 }
 

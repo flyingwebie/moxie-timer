@@ -41,6 +41,17 @@ A floating SwiftUI time-tracking widget for macOS that logs time to [Moxie](http
 - **Project suggestions:** while you track, the app learns which apps (and, with Accessibility permission, which window
   titles) go with which client/project, then suggests them. Learned data stays in a local file; you can clear it in Settings.
 
+### Staying on task
+
+- **Focus on this:** turn a running timer into a focus block (countdown + break) without losing the time already tracked.
+  A plain timer on its own has no blocks or breaks; focus mode is only active during a block.
+- **Distraction list:** mark apps (e.g. Messages, Slack) and site words matched against window titles (YouTube, Reddit…).
+  While a timer runs, switching to one turns the pill amber with "Back to: *task*", sends a notification after 2 min and
+  shows a prompt after 5 min: **Back to it** (returns you to the app you were working in), **Back, drop N min** (also
+  removes the drifted time), **Take a break**, or **It's for work** (no nudges for that app/site for 15 min).
+- **Check-ins:** every 20 min (configurable or off) a small bubble under the pill asks "Still on *task*?" —
+  Yes / Switch task / Break. It disappears on its own after a minute.
+
 AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
 Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.
 

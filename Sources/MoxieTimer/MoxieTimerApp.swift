@@ -63,7 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.activity.onNotify = {
                 notifier.postNotTracking(since: model.activity.untrackedSince, suggestion: model.activity.suggestion?.choice.label)
             }
-            model.activity.onPrompt = { [weak prompt] in prompt?.show() }
+            model.activity.onDriftNotify = {
+                notifier.postDrift(label: model.activity.driftLabel ?? "something else", task: model.activity.currentTaskName)
+            }
+            notifier.onBack = { model.activity.backToWork(dropDrift: false) }
+            notifier.onAllow = { model.activity.allowForWork() }
+            model.activity.onPrompt = { [weak prompt] in
+                prompt?.hide()
+                prompt?.show()
+            }
             model.activity.onDismissPrompt = { [weak prompt] in prompt?.hide() }
             model.activity.onReviewDue = { [weak panel] in
                 panel?.setVisible(true)

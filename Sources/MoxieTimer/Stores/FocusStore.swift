@@ -177,6 +177,22 @@ final class FocusStore {
 
     // MARK: Blocks
 
+    /// Turns the running plain timer into a focus block on the same work, keeping the tracked time.
+    func startFromTimer() {
+        guard block == nil, timer.session != nil else { return }
+        if target == nil {
+            let draft = timer.draft
+            let notes = draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            target = FocusTarget(
+                name: draft.task?.name ?? (notes.isEmpty ? (draft.project?.name ?? "Current work") : notes),
+                taskId: draft.task?.id,
+                clientName: draft.client?.name,
+                projectName: draft.project?.name
+            )
+        }
+        startBlock(minutes: suggestedMinutes, warmup: false)
+    }
+
     func startBlock(minutes: Int, warmup: Bool? = nil) {
         let length = TimeInterval(max(minutes, 5) * 60)
         let now = Date.now

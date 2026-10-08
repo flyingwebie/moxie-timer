@@ -117,6 +117,10 @@ struct SettingsView: View {
 
             Divider()
 
+            DistractionSettingsSection()
+
+            Divider()
+
             AISettingsSection()
 
             Divider()

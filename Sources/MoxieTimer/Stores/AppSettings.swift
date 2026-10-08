@@ -60,6 +60,26 @@ final class AppSettings {
         didSet { defaults.set(Array(workDays), forKey: "workDays") }
     }
 
+    /// Watch for distracting apps/sites while a timer runs.
+    var watchDistractions: Bool {
+        didSet { defaults.set(watchDistractions, forKey: "watchDistractions") }
+    }
+
+    /// Distracting apps: bundle identifier → display name.
+    var distractionApps: [String: String] {
+        didSet { defaults.set(distractionApps, forKey: "distractionApps") }
+    }
+
+    /// Words matched against browser/window titles (needs window titles enabled).
+    var distractionKeywords: [String] {
+        didSet { defaults.set(distractionKeywords, forKey: "distractionKeywords") }
+    }
+
+    /// "Still on it?" check-in interval while a timer runs; 0 = off.
+    var checkInMinutes: Int {
+        didSet { defaults.set(checkInMinutes, forKey: "checkInMinutes") }
+    }
+
     /// Read window titles (Accessibility permission) to improve project suggestions.
     var useWindowTitles: Bool {
         didSet { defaults.set(useWindowTitles, forKey: "useWindowTitles") }
@@ -89,6 +109,11 @@ final class AppSettings {
         workEndMinutes = defaults.object(forKey: "workEndMinutes") as? Int ?? 18 * 60
         workDays = Set(defaults.array(forKey: "workDays") as? [Int] ?? [2, 3, 4, 5, 6])
         useWindowTitles = defaults.object(forKey: "useWindowTitles") as? Bool ?? false
+        watchDistractions = defaults.object(forKey: "watchDistractions") as? Bool ?? true
+        distractionApps = defaults.dictionary(forKey: "distractionApps") as? [String: String] ?? [:]
+        distractionKeywords = defaults.stringArray(forKey: "distractionKeywords")
+            ?? ["youtube", "reddit", "facebook", "instagram", "netflix", "tiktok", "twitch"]
+        checkInMinutes = defaults.object(forKey: "checkInMinutes") as? Int ?? 20
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

@@ -4,10 +4,14 @@ struct WidgetRoot: View {
     /// Reports the content size so the panel can hug it.
     let onSize: (CGSize) -> Void
     @Environment(WidgetUI.self) private var ui
+    @Environment(ActivityWatcher.self) private var activity
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
             PillBar()
+            if activity.checkInDue {
+                CheckInBubble()
+            }
             if ui.expanded {
                 ExpandedCard()
             }
@@ -32,6 +36,9 @@ struct PillBar: View {
     private var notTracking: Bool {
         activity.nudge != .none && timer.session?.isRunning != true
     }
+
+    private var drifting: Bool { activity.drift != .none }
+    private var alerting: Bool { notTracking || drifting }
 
     var body: some View {
         HStack(spacing: 8) {
@@ -62,7 +69,14 @@ struct PillBar: View {
                     Circle()
                         .fill(dotColor)
                         .frame(width: 7, height: 7)
-                    if let block = focus.block, let name = focus.target?.name {
+                    if drifting {
+                        Text("Back to: \(activity.currentTaskName)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.onBreak)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                            .frame(maxWidth: 200, alignment: .leading)
+                    } else if let block = focus.block, let name = focus.target?.name {
                         // Focus mode: keep the task in view at all times.
                         Text(name)
                             .font(.system(size: 13, weight: .semibold))
@@ -116,8 +130,8 @@ struct PillBar: View {
             }
             .padding(.trailing, 4)
             .frame(height: 36)
-            .background(Capsule().fill(notTracking ? Theme.onBreak.opacity(0.15) : Theme.pill))
-            .overlay(Capsule().strokeBorder(notTracking ? Theme.onBreak : Theme.navy.opacity(0.35), lineWidth: notTracking ? 1.5 : 1))
+            .background(Capsule().fill(alerting ? Theme.onBreak.opacity(0.15) : Theme.pill))
+            .overlay(Capsule().strokeBorder(alerting ? Theme.onBreak : Theme.navy.opacity(0.35), lineWidth: alerting ? 1.5 : 1))
             .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
     }
@@ -128,7 +142,7 @@ struct PillBar: View {
     }
 
     private var dotColor: Color {
-        if notTracking { return Theme.onBreak }
+        if alerting { return Theme.onBreak }
         if let block = focus.block {
             if block.pausedAt != nil { return Theme.muted }
             switch block.phase {
@@ -275,5 +289,37 @@ struct ExpandedCard: View {
         }
         .buttonStyle(.plain)
         .help(help)
+    }
+}
+
+/// "Still on it?" — a light check-in under the pill while the timer runs.
+struct CheckInBubble: View {
+    @Environment(ActivityWatcher.self) private var activity
+    @Environment(WidgetUI.self) private var ui
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Still on “\(activity.currentTaskName)”?")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(2)
+            HStack(spacing: 6) {
+                Button("Yes 👍") { activity.answerCheckIn(.yes) }
+                    .buttonStyle(ChipButtonStyle())
+                Button("Switch task") {
+                    activity.answerCheckIn(.switchTask)
+                    ui.tab = .focus
+                    ui.expand(route: .tasks)
+                }
+                .buttonStyle(ChipButtonStyle())
+                Button("Break") { activity.answerCheckIn(.takeBreak) }
+                    .buttonStyle(ChipButtonStyle())
+            }
+        }
+        .padding(12)
+        .frame(width: 280, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.warmup.opacity(0.5)))
+        .shadow(color: .black.opacity(0.15), radius: 8, y: 3)
     }
 }

@@ -2,6 +2,8 @@ import SwiftUI
 
 struct TimerTab: View {
     @Environment(TimerStore.self) private var timer
+    @Environment(FocusStore.self) private var focus
+    @Environment(WidgetUI.self) private var ui
     @Environment(Clock.self) private var clock
 
     @State private var durationText = ""
@@ -32,6 +34,22 @@ struct TimerTab: View {
 
             if let session = timer.session {
                 adjustBox(session: session, now: now)
+
+                if focus.block == nil {
+                    Button {
+                        focus.startFromTimer()
+                        ui.tab = .focus
+                    } label: {
+                        Label("Focus on this · \(focus.suggestedMinutes) min block", systemImage: "scope")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                    .help("Turn this timer into a focus block with a countdown and a break at the end")
+                } else if let block = focus.block, block.isWorking {
+                    Label("In a focus block — see the Focus tab", systemImage: "scope")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.running)
+                }
             }
 
             if timer.draft.client == nil {
