@@ -168,6 +168,8 @@ final class PetStore {
     @ObservationIgnored private let timer: TimerStore
     @ObservationIgnored private let idle: IdleMonitor
     @ObservationIgnored private let ai: AIService
+    @ObservationIgnored private let voice: PetVoice
+    @ObservationIgnored private let library: PetLineLibrary
     @ObservationIgnored private var state = Persisted()
     @ObservationIgnored private var last = Snapshot()
     @ObservationIgnored private var primed = false
@@ -181,7 +183,7 @@ final class PetStore {
     @ObservationIgnored private let storageKey = "petState"
 
     init(settings: AppSettings, stats: StatsStore, activity: ActivityWatcher, focus: FocusStore,
-         timer: TimerStore, idle: IdleMonitor, ai: AIService) {
+         timer: TimerStore, idle: IdleMonitor, ai: AIService, voice: PetVoice, library: PetLineLibrary) {
         self.settings = settings
         self.stats = stats
         self.activity = activity
@@ -189,6 +191,8 @@ final class PetStore {
         self.timer = timer
         self.idle = idle
         self.ai = ai
+        self.voice = voice
+        self.library = library
         if let data = UserDefaults.standard.data(forKey: storageKey),
            let saved = try? JSONDecoder().decode(Persisted.self, from: data) {
             state = saved
@@ -385,7 +389,9 @@ final class PetStore {
         if event.isPositive, !important.contains(event), now.timeIntervalSince(lastLineAt) < 20 { return }
         if settings.petTone == PetTone.quiet.rawValue, !important.contains(event), !event.isDrift { return }
 
-        let text = fill(pickLine(for: event))
+        // Lines carry voice markup ([excited], <laugh>…); the bubble shows them without it.
+        let spoken = fill(pickLine(for: event))
+        let text = PetSpeech.display(spoken)
         guard !text.isEmpty else { return }
         line = text
         lineIsDrift = event.isDrift
@@ -398,11 +404,15 @@ final class PetStore {
         updateExpression(now: now)
         if event == .taskDone || event == .levelUp || event == .newPet { NSSound(named: "Funk")?.play() }
 
+        let speakIt = !settings.petVoiceImportantOnly || important.contains(event)
         if settings.petUseAI, ai.hasEnabledEngine, important.contains(event) || event == .hello || event == .notTracking,
            now.timeIntervalSince(lastAIAt) >= 60 {
             lastAIAt = now
             let placeholder = text
-            Task { await writeWithAI(event, replacing: placeholder) }
+            // Speak once, after the AI answers, so the voice doesn't say two different lines.
+            Task { await writeWithAI(event, replacing: placeholder, thenSpeak: speakIt ? spoken : nil) }
+        } else if speakIt {
+            voice.speak(spoken)
         }
     }
 
@@ -413,7 +423,10 @@ final class PetStore {
         if relevant, !custom.isEmpty, Bool.random() || PetTone(rawValue: settings.petTone) == nil {
             return custom.randomElement()!
         }
-        return PetPhrases.line(for: event, tone: PetTone(rawValue: settings.petTone) ?? .warm)
+        let tone = PetTone(rawValue: settings.petTone) ?? .warm
+        let resolved = tone == .mix ? [PetTone.warm, .coach, .quiet].randomElement()! : tone
+        // AI-written lines (Settings → Your pet) replace the built-in ones where they exist.
+        return library.lines(for: event, tone: resolved)?.randomElement() ?? PetPhrases.line(for: event, tone: resolved)
     }
 
     private func fill(_ template: String) -> String {
@@ -426,7 +439,7 @@ final class PetStore {
             .replacingOccurrences(of: "{pet}", with: newlyUnlocked?.title ?? "a new pet")
     }
 
-    private func writeWithAI(_ event: PetEvent, replacing placeholder: String) async {
+    private func writeWithAI(_ event: PetEvent, replacing placeholder: String, thenSpeak fallback: String?) async {
         let tone = PetTone(rawValue: settings.petTone) ?? .warm
         let toneDescription: String = {
             switch tone == .mix ? [PetTone.warm, .coach, .quiet].randomElement()! : tone {
@@ -439,7 +452,7 @@ final class PetStore {
         let instructions = """
         You are \(settings.petName), a tiny blob-spirit mascot that lives next to a focus timer and helps a person \
         with ADHD stay on task. Your tone: \(toneDescription).\(style.isEmpty ? "" : " The user asked you to talk like this: \(style).") \
-        Reply with ONE short line, at most 16 words, no quotes, at most one emoji.
+        Reply with ONE short line, at most 16 words, no quotes, at most one emoji.\(voice.engine == .off ? "" : Self.expressionHint)
         """
         let prompt = """
         Situation: \(event.situation)
@@ -447,15 +460,28 @@ final class PetStore {
         \(activity.driftLabel.map { "Distraction: \($0)" } ?? "")
         Your level: \(level). Focus streak: \(stats.streak()) days.
         """
-        guard let reply = try? await ai.generate(instructions: instructions, prompt: prompt) else { return }
-        let text = reply.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
+        let reply = try? await ai.generate(instructions: instructions, prompt: prompt)
+        let text = reply?.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
         let cleaned = text.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”"))
         // Only swap if the built-in line is still showing.
-        guard !cleaned.isEmpty, cleaned.count <= 160, line == placeholder else { return }
-        line = cleaned
+        guard line == placeholder else { return }
+        let shown = PetSpeech.display(cleaned)
+        if !shown.isEmpty, cleaned.count <= 200 {
+            line = shown
+            if fallback != nil, !isInCall() { voice.speak(cleaned) }
+        } else if let fallback, !isInCall() {
+            voice.speak(fallback)
+        }
     }
 
+    private static let expressionHint = """
+     You may start with one emotion tag from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")) \
+    and add at most one sound from \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")); \
+    wrap one key word in (((triple parentheses))) to stress it.
+    """
+
     func clearLine() {
+        if line != nil { voice.stop() }
         line = nil
         lineIsDrift = false
     }

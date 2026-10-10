@@ -67,6 +67,8 @@ final class AppModel {
     let clock = Clock()
     let updater = Updater()
     let ai = AIService()
+    let voice: PetVoice
+    let petLines: PetLineLibrary
     let inbox: TaskInbox
     let focus: FocusStore
     let idle: IdleMonitor
@@ -83,7 +85,10 @@ final class AppModel {
         focus = FocusStore(timer: timer, inbox: inbox, stats: stats)
         idle = IdleMonitor(timer: timer, focus: focus)
         activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history, stats: stats)
-        pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai)
+        voice = PetVoice(settings: settings, ai: ai)
+        petLines = PetLineLibrary(settings: settings, ai: ai)
+        pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai,
+                       voice: voice, library: petLines)
         calls = CallDetector(settings: settings)
         let calls = calls
         focus.isInCall = { calls.inCall }

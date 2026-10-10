@@ -205,7 +205,7 @@ final class AIService {
     }
 
     /// GUI apps don't inherit the shell PATH, and these CLIs need it (most are Node scripts).
-    private func resolvedLoginPath() async -> String {
+    func resolvedLoginPath() async -> String {
         if let loginPath { return loginPath }
         let marker = "__MOXIETIMER_PATH__"
         let output = (try? await Self.execute(

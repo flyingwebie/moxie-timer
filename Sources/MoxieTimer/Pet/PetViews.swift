@@ -216,9 +216,10 @@ struct PetSettingsSection: View {
                    placeholder: "Grande Davide! 🔥\nAnother one bites the dust")
             editor("Your get-back-on-track lines (one per line)", text: $settings.petDriftLines,
                    placeholder: "{app} again? {task} is waiting.\nPhone down, Davide.")
-            Text("Use {task}, {app}, {name}, {level} or {streak} in your lines.")
+            Text("Use {task}, {app}, {name}, {level} or {streak} in your lines. Voices also understand [excited], <laugh> and (((emphasis))).")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
 
             Toggle("Let AI write lines in my style", isOn: $settings.petUseAI)
                 .toggleStyle(.switch).tint(Theme.navy).controlSize(.small).font(.system(size: 12))
@@ -229,6 +230,8 @@ struct PetSettingsSection: View {
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
+
+            PetLinesWriter()
         }
     }
 
@@ -296,6 +299,112 @@ struct SpeciesPicker: View {
                     .help(unlocked ? species.title : "\(species.title) — unlock at \(species.requirement.label) (\(Int(pet.progress(toward: species) * 100))% there)")
                 }
             }
+        }
+    }
+}
+
+/// Settings → Your pet: have AI write the pet's whole set of lines in the user's tone and style.
+struct PetLinesWriter: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(AIService.self) private var ai
+    @Environment(PetLineLibrary.self) private var library
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Built-in lines").font(.system(size: 12))
+                    Text(status).font(.system(size: 10)).foregroundStyle(Theme.faint)
+                }
+                Spacer()
+                if library.isWriting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    if library.saved != nil {
+                        Button("Use the originals") { library.reset() }.controlSize(.small)
+                    }
+                    Button(library.saved == nil ? "Write new lines with AI" : "Rewrite") { Task { await library.write() } }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .controlSize(.small)
+                        .disabled(!ai.hasEnabledEngine || library.tonesToWrite.isEmpty)
+                }
+            }
+            if let progress = library.progress {
+                note(progress + " This can take a minute.")
+            } else if !ai.hasEnabledEngine {
+                note("Turn on an AI engine below to write new lines.")
+            } else if library.tonesToWrite.isEmpty {
+                note("The Quiet tone only uses emoji, so there's nothing to write.")
+            } else {
+                note("Writes \(PetLineLibrary.linesPerMoment) fresh lines for every moment (finishing, drifting, breaks…) in your tone and “Talk to me like…”, with voice expressions. They're saved on this Mac and replace the originals, so lines stay instant. Claude, Codex, Gemini or a good Ollama model write much better lines than Apple's on-device model.")
+            }
+            if let error = library.lastError {
+                Text(error).font(.system(size: 10)).foregroundStyle(Theme.onBreak).fixedSize(horizontal: false, vertical: true)
+            }
+            if library.saved != nil {
+                DisclosureGroup("See the lines") { lineList.padding(.top, 4) }
+                    .font(.system(size: 11))
+            }
+        }
+    }
+
+    private var status: String {
+        guard let saved = library.saved else { return "The originals that come with the app." }
+        let tones = PetLineLibrary.writableTones.filter { library.count(for: $0) > 0 }
+            .map { "\($0.title): \(library.count(for: $0))" }.joined(separator: ", ")
+        let date = saved.createdAt.formatted(date: .abbreviated, time: .shortened)
+        return "AI-written \(date)\(saved.engine.map { " by \($0)" } ?? "") · \(tones)"
+    }
+
+    private var lineList: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(PetLineLibrary.writableTones.filter { library.count(for: $0) > 0 }) { tone in
+                Text(tone.title).font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.ink)
+                ForEach(PetEvent.allCases, id: \.self) { event in
+                    if let lines = library.lines(for: event, tone: tone) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(event.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
+                            ForEach(lines, id: \.self) { line in
+                                Text("• " + PetSpeech.display(line))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.ink)
+                                    .help(line)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func note(_ text: String) -> some View {
+        Text(text).font(.system(size: 10)).foregroundStyle(Theme.faint).fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+extension PetEvent {
+    /// For the line list in Settings.
+    var title: String {
+        switch self {
+        case .hello: return "Saying hello"
+        case .warmupDone: return "Warm-up done"
+        case .blockDone: return "Focus block done"
+        case .taskDone: return "Task done"
+        case .focusMilestone: return "Long focus stretch"
+        case .cameBack: return "Came back from a distraction"
+        case .checkInYes: return "Still on task"
+        case .levelUp: return "Level up"
+        case .newPet: return "New pet unlocked"
+        case .driftStart: return "Drifting"
+        case .driftFirm: return "Drifting for 2 minutes"
+        case .driftPrompt: return "Drifting for 5 minutes"
+        case .notTracking: return "Working without a timer"
+        case .breakStart: return "Break starts"
+        case .breakOver: return "Break over"
+        case .welcomeBack: return "Back at the Mac"
         }
     }
 }

@@ -89,6 +89,22 @@ speech bubble — with a **Back to it** button while you're drifting. It also ap
 - **Your tone** (Settings → Your pet): Warm & playful, Coach, Quiet or a mix; a "Talk to me like…" description; your own
   praise and get-back-on-track lines (with `{task}`, `{app}`, `{name}`, `{level}`, `{streak}`); and optionally AI-written
   lines in your style, in any language.
+- **Write new lines with AI** (Settings → Your pet): AI writes a fresh set of 4 lines for every moment (finishing,
+  drifting, breaks…) in your tone, style and language, with voice expressions. It's told what the app does and doesn't
+  do, so the pet never promises things like blocking sites. The lines are saved on this Mac
+  (`~/Library/Application Support/MoxieTimer/pet-lines.json`) and replace the originals, so they stay instant and work
+  offline. You can read them all, rewrite them, or go back to the originals. Claude, Codex, Gemini or a good Ollama
+  model write much better lines than Apple's on-device model.
+- **Voice** (Settings → Pet voice): the pet can say its lines out loud, every line or only the important moments, and
+  never during calls. You can set volume, speed and pitch.
+  - **Mac voices** work right away. Pick any installed voice (Premium/Enhanced ones sound best).
+  - **KittenTTS** runs a local AI voice on this Mac. "Install KittenTTS" sets up a private Python environment in
+    `~/.moxie-timer/voice` (uses `uv` if you have it). **KittenTTS 2** has 47 voices and acts out emotions, but needs
+    about 6 GB of memory while loaded and takes a few seconds per line. **Mini/Micro/Nano** are tiny and instant but
+    have no expressions. The model stays loaded for a time you choose, then frees its memory.
+  - **Expressions:** lines carry `[excited]`/`[sad]`/`[stern]`… emotion tags, `<laugh>`/`<sigh>`/`<gasp>`… sounds and
+    `(((emphasis)))`. The bubble hides them, KittenTTS 2 performs them, and Mac voices approximate them with pitch, pace
+    and "ha ha". Your own lines and AI lines can use them too.
 
 AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
 Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.

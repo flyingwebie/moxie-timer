@@ -91,6 +91,32 @@ final class AppSettings {
     /// PetAccessory raw value or "auto".
     var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
 
+    // MARK: Pet voice
+    /// PetVoice.Engine raw value.
+    var petVoiceEngine: String { didSet { defaults.set(petVoiceEngine, forKey: "petVoiceEngine") } }
+    /// Speak only the important moments (task done, level up, firm drift nudges…), not every line.
+    var petVoiceImportantOnly: Bool { didSet { defaults.set(petVoiceImportantOnly, forKey: "petVoiceImportantOnly") } }
+    var petVoiceVolume: Double { didSet { defaults.set(petVoiceVolume, forKey: "petVoiceVolume") } }
+    /// 0.5…2, 1 = normal.
+    var petVoiceSpeed: Double { didSet { defaults.set(petVoiceSpeed, forKey: "petVoiceSpeed") } }
+    /// Semitones, -8…+8.
+    var petVoicePitch: Double { didSet { defaults.set(petVoicePitch, forKey: "petVoicePitch") } }
+    /// AVSpeechSynthesisVoice identifier; empty = system default.
+    var petSystemVoice: String { didSet { defaults.set(petSystemVoice, forKey: "petSystemVoice") } }
+    /// Hugging Face repo of the KittenTTS model.
+    var petKittenModel: String { didSet { defaults.set(petKittenModel, forKey: "petKittenModel") } }
+    /// KittenTTS 2 weights: "emb4" (smaller) or "packed" (lossless).
+    var petKittenWeights: String { didSet { defaults.set(petKittenWeights, forKey: "petKittenWeights") } }
+    var petKittenVoice: String { didSet { defaults.set(petKittenVoice, forKey: "petKittenVoice") } }
+    /// KittenTTS 2 decoding preset: "stable" or "expressive".
+    var petKittenPreset: String { didSet { defaults.set(petKittenPreset, forKey: "petKittenPreset") } }
+    /// Send [emotion], <event> and (((emphasis))) markup to the voice.
+    var petVoiceExpressions: Bool { didSet { defaults.set(petVoiceExpressions, forKey: "petVoiceExpressions") } }
+    /// Minutes without speaking before the KittenTTS model is unloaded; 0 = keep it loaded.
+    var petKittenKeepLoadedMinutes: Int { didSet { defaults.set(petKittenKeepLoadedMinutes, forKey: "petKittenKeepLoadedMinutes") } }
+    /// Python with `kittenml` installed; empty = the app's own environment.
+    var petKittenPython: String { didSet { defaults.set(petKittenPython, forKey: "petKittenPython") } }
+
     /// Detect calls (microphone in use) and pause breaks/nudges while one is on.
     var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: "detectCalls") } }
     /// Apps whose microphone use isn't a call (always-on recorders, dictation). Comma-separated, matched loosely.
@@ -161,6 +187,19 @@ final class AppSettings {
         petDriftLines = defaults.string(forKey: "petDriftLines") ?? ""
         petUseAI = defaults.object(forKey: "petUseAI") as? Bool ?? false
         petAccessory = defaults.string(forKey: "petAccessory") ?? "auto"
+        petVoiceEngine = defaults.string(forKey: "petVoiceEngine") ?? "off"
+        petVoiceImportantOnly = defaults.object(forKey: "petVoiceImportantOnly") as? Bool ?? false
+        petVoiceVolume = defaults.object(forKey: "petVoiceVolume") as? Double ?? 0.8
+        petVoiceSpeed = defaults.object(forKey: "petVoiceSpeed") as? Double ?? 1
+        petVoicePitch = defaults.object(forKey: "petVoicePitch") as? Double ?? 0
+        petSystemVoice = defaults.string(forKey: "petSystemVoice") ?? ""
+        petKittenModel = defaults.string(forKey: "petKittenModel") ?? "KittenML/kitten-tts-2"
+        petKittenWeights = defaults.string(forKey: "petKittenWeights") ?? "emb4"
+        petKittenVoice = defaults.string(forKey: "petKittenVoice") ?? "Kiki"
+        petKittenPreset = defaults.string(forKey: "petKittenPreset") ?? "expressive"
+        petVoiceExpressions = defaults.object(forKey: "petVoiceExpressions") as? Bool ?? true
+        petKittenPython = defaults.string(forKey: "petKittenPython") ?? ""
+        petKittenKeepLoadedMinutes = defaults.object(forKey: "petKittenKeepLoadedMinutes") as? Int ?? 60
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 
