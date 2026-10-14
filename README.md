@@ -100,11 +100,13 @@ speech bubble — with a **Back to it** button while you're drifting. It also ap
   - **Mac voices** work right away. Pick any installed voice (Premium/Enhanced ones sound best).
   - **KittenTTS** runs a local AI voice on this Mac. "Install KittenTTS" sets up a private Python environment in
     `~/.moxie-timer/voice` (uses `uv` if you have it). **KittenTTS 2** has 47 voices and acts out emotions, but needs
-    about 6 GB of memory while loaded and takes a few seconds per line. **Mini/Micro/Nano** are tiny and instant but
-    have no expressions. The model stays loaded for a time you choose, then frees its memory.
+    about 6 GB of memory while loaded and takes 6–10 seconds per line, so while it's loaded the pet writes and voices
+    its next line for each moment in the background and most lines play at once. **Mini/Micro/Nano** are tiny and
+    instant but have no expressions. The model stays loaded for a time you choose, then frees its memory.
   - **Expressions:** lines carry `[excited]`/`[sad]`/`[stern]`… emotion tags, `<laugh>`/`<sigh>`/`<gasp>`… sounds and
     `(((emphasis)))`. The bubble hides them, KittenTTS 2 performs them, and Mac voices approximate them with pitch, pace
-    and "ha ha". Your own lines and AI lines can use them too.
+    and "ha ha". Every line gets an emotion (one that fits the moment if it has none), and AI replies are tidied
+    into tags (a stray `**Angry**` becomes `[angry]`). Your own lines can use them too.
 
 AI engines (Settings → AI), tried in your order: Apple on-device (macOS 26 with Apple Intelligence), Ollama, then the
 Claude Code, Codex or Gemini CLIs using your existing subscriptions. Without AI, "Pick for me" uses the rules above.

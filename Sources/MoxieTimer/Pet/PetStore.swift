@@ -178,6 +178,12 @@ final class PetStore {
     @ObservationIgnored private var lineUntil: Date = .distantPast
     @ObservationIgnored private var lastLineAt: Date = .distantPast
     @ObservationIgnored private var lastAIAt: Date = .distantPast
+    /// The next line for each moment, written (and voiced) ahead of time.
+    @ObservationIgnored private var upNext: [PetEvent: String] = [:]
+    @ObservationIgnored private var prepareTask: Task<Void, Never>?
+    @ObservationIgnored private var lastPrepareAt: Date = .distantPast
+    @ObservationIgnored private var preparedSignature = ""
+    @ObservationIgnored private var prepareRun = 0
     @ObservationIgnored private var cleanFocusSince: Date?
     @ObservationIgnored private var lastSave: Date = .distantPast
     @ObservationIgnored private let storageKey = "petState"
@@ -263,6 +269,7 @@ final class PetStore {
             }
             return
         }
+        prepareLines(now: now)
 
         var events: [PetEvent] = []
         if today.focusSeconds > last.day.focusSeconds { gain(xp: (today.focusSeconds - last.day.focusSeconds) / 60) }
@@ -384,13 +391,15 @@ final class PetStore {
     func say(_ event: PetEvent) {
         guard !isInCall() else { return }
         let now = Date.now
-        let important: Set<PetEvent> = [.taskDone, .levelUp, .newPet, .blockDone, .driftFirm, .driftPrompt, .cameBack]
+        let important = Self.importantEvents
         // Don't chatter: minor positive lines wait if something was said recently.
         if event.isPositive, !important.contains(event), now.timeIntervalSince(lastLineAt) < 20 { return }
         if settings.petTone == PetTone.quiet.rawValue, !important.contains(event), !event.isDrift { return }
 
         // Lines carry voice markup ([excited], <laugh>…); the bubble shows them without it.
-        let spoken = fill(pickLine(for: event))
+        // A line prepared ahead of time (AI text and voice audio) is used first, so it plays at once.
+        let prepared = upNext.removeValue(forKey: event)
+        let spoken = fill(prepared ?? PetSpeech.withEmotion(pickLine(for: event), default: PetSpeech.defaultEmotion(for: event)))
         let text = PetSpeech.display(spoken)
         guard !text.isEmpty else { return }
         line = text
@@ -405,8 +414,7 @@ final class PetStore {
         if event == .taskDone || event == .levelUp || event == .newPet { NSSound(named: "Funk")?.play() }
 
         let speakIt = !settings.petVoiceImportantOnly || important.contains(event)
-        if settings.petUseAI, ai.hasEnabledEngine, important.contains(event) || event == .hello || event == .notTracking,
-           now.timeIntervalSince(lastAIAt) >= 60 {
+        if prepared == nil, usesAI(for: event), now.timeIntervalSince(lastAIAt) >= 60 {
             lastAIAt = now
             let placeholder = text
             // Speak once, after the AI answers, so the voice doesn't say two different lines.
@@ -414,6 +422,13 @@ final class PetStore {
         } else if speakIt {
             voice.speak(spoken)
         }
+        lastPrepareAt = .distantPast
+    }
+
+    private static let importantEvents: Set<PetEvent> = [.taskDone, .levelUp, .newPet, .blockDone, .driftFirm, .driftPrompt, .cameBack]
+
+    private func usesAI(for event: PetEvent) -> Bool {
+        settings.petUseAI && ai.hasEnabledEngine && (Self.importantEvents.contains(event) || event == .hello || event == .notTracking)
     }
 
     private func pickLine(for event: PetEvent) -> String {
@@ -440,45 +455,108 @@ final class PetStore {
     }
 
     private func writeWithAI(_ event: PetEvent, replacing placeholder: String, thenSpeak fallback: String?) async {
+        let written = await aiLine(for: event, drift: activity.driftLabel).map(fill)
+        // Only swap if the built-in line is still showing.
+        guard line == placeholder else { return }
+        if let written {
+            line = PetSpeech.display(written)
+            if fallback != nil, !isInCall() { voice.speak(written) }
+        } else if let fallback, !isInCall() {
+            voice.speak(fallback)
+        }
+    }
+
+    /// One line from the AI for a moment, as a template ({task} etc. filled in later), with voice markup.
+    private func aiLine(for event: PetEvent, drift: String?) async -> String? {
         let tone = PetTone(rawValue: settings.petTone) ?? .warm
         let toneDescription: String = {
             switch tone == .mix ? [PetTone.warm, .coach, .quiet].randomElement()! : tone {
             case .warm, .mix: return "warm, playful and encouraging; tease gently when they drift"
             case .coach: return "short, direct and firm, like a sports coach"
-            case .quiet: return "extremely brief: one emoji or a few words"
+            case .quiet: return "extremely brief: a few words"
             }
         }()
         let style = settings.petStyle.trimmingCharacters(in: .whitespacesAndNewlines)
         let instructions = """
         You are \(settings.petName), a tiny blob-spirit mascot that lives next to a focus timer and helps a person \
         with ADHD stay on task. Your tone: \(toneDescription).\(style.isEmpty ? "" : " The user asked you to talk like this: \(style).") \
-        Reply with ONE short line, at most 16 words, no quotes, at most one emoji.\(voice.engine == .off ? "" : Self.expressionHint)
+        Reply with ONE short line, at most 16 words, no quotes, no markdown, at most one emoji. Write {task} where you'd \
+        say the task's name; the app fills it in.\(Self.expressionRules)
         """
         let prompt = """
         Situation: \(event.situation)
-        Current task: \(activity.currentTaskName)
-        \(activity.driftLabel.map { "Distraction: \($0)" } ?? "")
+        Current task: {task}
+        \(drift.map { "Distraction: \($0)" } ?? "")
         Your level: \(level). Focus streak: \(stats.streak()) days.
         """
-        let reply = try? await ai.generate(instructions: instructions, prompt: prompt)
-        let text = reply?.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty } ?? ""
-        let cleaned = text.trimmingCharacters(in: CharacterSet(charactersIn: "\"'“”"))
-        // Only swap if the built-in line is still showing.
-        guard line == placeholder else { return }
-        let shown = PetSpeech.display(cleaned)
-        if !shown.isEmpty, cleaned.count <= 200 {
-            line = shown
-            if fallback != nil, !isInCall() { voice.speak(cleaned) }
-        } else if let fallback, !isInCall() {
-            voice.speak(fallback)
+        guard let reply = try? await ai.generate(instructions: instructions, prompt: prompt),
+              let first = reply.split(separator: "\n").map({ $0.trimmingCharacters(in: .whitespaces) }).first(where: { !$0.isEmpty })
+        else { return nil }
+        let written = PetSpeech.normalize(first, defaultEmotion: PetSpeech.defaultEmotion(for: event))
+        // Placeholders it may use; {app} only when the distraction is known.
+        let usable = PetLineLibrary.isUsable(written, for: event) && (drift != nil || !written.contains("{app}"))
+        return usable && written.count <= 200 ? written : nil
+    }
+
+    private static let expressionRules = """
+     The voice acts the line out from markup the bubble hides. ALWAYS start with exactly one emotion tag in square \
+    brackets from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")). Where it fits, add one sound from \
+    \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")) and wrap one key word in (((triple parentheses))) to stress it. \
+    Never write the emotion as a word, label or bold text. Example: [stern] <scoff> Five minutes gone. Back to {task}, (((now))).
+    """
+
+    // MARK: Lines prepared ahead
+
+    /// Moments worth preparing: the ones the pet says often or that matter most.
+    private static let preparedEvents: [PetEvent] = [
+        .notTracking, .driftStart, .driftFirm, .driftPrompt, .cameBack, .taskDone, .blockDone, .breakStart,
+        .breakOver, .warmupDone, .checkInYes, .focusMilestone, .welcomeBack, .hello,
+    ]
+
+    /// Fills `upNext` one moment at a time while nothing else is going on, and keeps the audio of each
+    /// prepared line in the voice's cache (lines that mention {task} are rendered again after the task changes).
+    private func prepareLines(now: Date) {
+        // What the pet would say changed (tone, style, own lines…): prepare again.
+        let signature = [settings.petTone, settings.petStyle, settings.petName, "\(settings.petUseAI)", settings.petDriftLines,
+                         settings.petPraiseLines, "\(library.saved?.createdAt.timeIntervalSince1970 ?? 0)"].joined(separator: "|")
+        if signature != preparedSignature {
+            resetPreparedLines()
+            preparedSignature = signature
+        }
+        guard prepareTask == nil, now.timeIntervalSince(lastPrepareAt) >= 20, !isInCall() else { return }
+        let slowVoice = voice.engine == .kitten && voice.kittenState == .ready
+        let anyAI = Self.preparedEvents.contains(where: usesAI)
+        guard slowVoice || anyAI, settings.petTone != PetTone.quiet.rawValue else { return }
+        lastPrepareAt = now
+        prepareRun += 1
+        let run = prepareRun
+        prepareTask = Task {
+            defer { if prepareRun == run { prepareTask = nil } }
+            for event in Self.preparedEvents {
+                guard !Task.isCancelled, !isInCall() else { return }
+                if upNext[event] == nil {
+                    var template = usesAI(for: event) ? await aiLine(for: event, drift: nil) : nil
+                    if template == nil {
+                        template = PetSpeech.withEmotion(pickLine(for: event), default: PetSpeech.defaultEmotion(for: event))
+                    }
+                    guard !Task.isCancelled else { return }
+                    guard let template, PetSpeech.hasWords(template) else { continue }
+                    upNext[event] = template
+                }
+                // {app} is only known at the moment itself, so those lines are voiced live.
+                if let template = upNext[event], !template.contains("{app}"), voice.engine == .kitten, voice.kittenState == .ready {
+                    await voice.prepare(fill(template))
+                }
+            }
         }
     }
 
-    private static let expressionHint = """
-     You may start with one emotion tag from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")) \
-    and add at most one sound from \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")); \
-    wrap one key word in (((triple parentheses))) to stress it.
-    """
+    private func resetPreparedLines() {
+        prepareTask?.cancel()
+        prepareTask = nil
+        upNext.removeAll()
+        lastPrepareAt = .distantPast
+    }
 
     func clearLine() {
         if line != nil { voice.stop() }

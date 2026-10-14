@@ -27,7 +27,7 @@ final class PetVoice {
 
     static let kittenModels = [
         KittenModel(id: "KittenML/kitten-tts-2", title: "KittenTTS 2",
-                    detail: "47 voices with emotions and laughs. Needs about 6 GB of memory while loaded and takes a few seconds per line."),
+                    detail: "47 voices with emotions and laughs. Needs about 6 GB of memory while loaded and takes 6–10 seconds per line, so the pet prepares its next lines in the background."),
         KittenModel(id: "KittenML/kitten-tts-mini-0.8", title: "Mini (80 MB)",
                     detail: "Fast and light: speaks almost instantly, 8 voices, no expressions."),
         KittenModel(id: "KittenML/kitten-tts-micro-0.8", title: "Micro (41 MB)", detail: "Lighter still, 8 voices, no expressions."),
@@ -77,6 +77,7 @@ final class PetVoice {
     @ObservationIgnored private var player: AVAudioPlayerNode?
     @ObservationIgnored private var timePitch: AVAudioUnitTimePitch?
     @ObservationIgnored private var worker: Worker?
+    @ObservationIgnored private var workerID: UUID?
     @ObservationIgnored private var generation = 0
     @ObservationIgnored private var queued: String?
     @ObservationIgnored private var lastUse = Date.distantPast
@@ -128,6 +129,7 @@ final class PetVoice {
     func stop() {
         generation += 1
         queued = nil
+        playWhenPrepared = nil
         retireUtterances()
         synthesizer.stopSpeaking(at: .immediate)
         player?.stop()
@@ -148,7 +150,7 @@ final class PetVoice {
         let voice = AVSpeechSynthesisVoice(identifier: settings.petSystemVoice)
             ?? AVSpeechSynthesisVoice(language: Locale.preferredLanguages.first)
         let tone = Self.systemTone(for: PetSpeech.emotion(of: text))
-        let segments = PetSpeech.plainSegments(text)
+        let segments = PetSpeech.plainSegments(PetSpeech.spoken(text))
         for (index, segment) in segments.enumerated() {
             let utterance = AVSpeechUtterance(string: segment)
             utterance.voice = voice
@@ -210,14 +212,24 @@ final class PetVoice {
             lastError = "KittenTTS isn't installed yet (Settings → Pet voice)."
             return
         }
+        generation += 1
+        let mine = generation
+        let line = kittenText(text)
+        let key = cacheKey(line)
+        // Prepared ahead of time: plays at once.
+        if let file = audioCache[key] {
+            touchCache(key)
+            do { try play(file) } catch { lastError = error.localizedDescription }
+            return
+        }
+        if preparingKey == key {
+            playWhenPrepared = mine
+            return
+        }
         if isGenerating {
             queued = text
             return
         }
-        generation += 1
-        let mine = generation
-        let model = kittenModel
-        let line = model.isExpressive && settings.petVoiceExpressions ? text : PetSpeech.display(text)
         isGenerating = true
         Task {
             defer {
@@ -228,28 +240,109 @@ final class PetVoice {
                 }
             }
             do {
-                let worker = try await startWorker()
-                if kittenState != .ready { kittenState = .loading }
-                let out = FileManager.default.temporaryDirectory.appending(path: "moxie-pet-\(UUID().uuidString).wav")
-                var request: [String: Any] = [
-                    "cmd": "speak", "text": line, "out": out.path, "model": model.id,
-                    "weights": settings.petKittenWeights, "voice": validKittenVoice(for: model),
-                    "preset": settings.petKittenPreset,
-                    "normalize": !Self.languageVoices.contains(settings.petKittenVoice),
-                ]
-                // The small models change pace natively; KittenTTS 2 is time-stretched at playback.
-                if !model.isExpressive { request["speed"] = settings.petVoiceSpeed }
-                _ = try await worker.send(request, timeout: 300)
-                kittenState = .ready
-                defer { try? FileManager.default.removeItem(at: out) }
+                let file = try await render(line)
+                storeInCache(key, file)
                 // A newer line arrived meanwhile: skip this one.
                 guard mine == generation, queued == nil else { return }
-                try play(out, rate: model.isExpressive ? settings.petVoiceSpeed : 1)
+                try play(file)
             } catch {
                 lastError = error.localizedDescription
                 if kittenState == .loading { kittenState = .failed(error.localizedDescription) }
             }
         }
+    }
+
+    /// Generates a line's audio ahead of time, so it plays at once when the pet says it.
+    /// Only while the model is already loaded, and it waits for any line being spoken.
+    func prepare(_ text: String) async {
+        guard engine == .kitten, PetSpeech.hasWords(text) else { return }
+        let line = kittenText(text)
+        let key = cacheKey(line)
+        guard audioCache[key] == nil, preparingKey == nil else { return }
+        while isGenerating { try? await Task.sleep(for: .milliseconds(500)) }
+        guard kittenState == .ready, let worker, worker.isRunning, audioCache[key] == nil, preparingKey == nil else { return }
+        preparingKey = key
+        defer { preparingKey = nil }
+        do {
+            let file = try await render(line)
+            storeInCache(key, file)
+            // The pet asked for this line while it was being prepared.
+            if playWhenPrepared == generation {
+                playWhenPrepared = nil
+                try play(file)
+            }
+        } catch {
+            playWhenPrepared = nil
+        }
+    }
+
+    /// The text KittenTTS gets: no emoji, and markup only if the model performs it.
+    private func kittenText(_ text: String) -> String {
+        let spoken = PetSpeech.spoken(text)
+        return kittenModel.isExpressive && settings.petVoiceExpressions ? spoken : PetSpeech.display(spoken)
+    }
+
+    /// KittenTTS 2 is time-stretched at playback; the small models change pace natively.
+    private var playbackRate: Double { kittenModel.isExpressive ? settings.petVoiceSpeed : 1 }
+
+    private func cacheKey(_ line: String) -> String {
+        let model = kittenModel
+        var parts = [model.id, validKittenVoice(for: model), line]
+        if model.isExpressive { parts += [settings.petKittenWeights, settings.petKittenPreset] } else { parts.append("\(settings.petVoiceSpeed)") }
+        return parts.joined(separator: "|")
+    }
+
+    /// Generates a line's audio. KittenTTS 2 stays whole: split into short sentences it rambles and gets slower.
+    private func render(_ line: String) async throws -> URL {
+        let worker = try await startWorker()
+        if kittenState != .ready { kittenState = .loading }
+        let model = kittenModel
+        let out = Self.cacheDirectory.appending(path: "\(UUID().uuidString).wav")
+        var request: [String: Any] = [
+            "cmd": "speak", "text": line, "out": out.path, "model": model.id,
+            "weights": settings.petKittenWeights, "voice": validKittenVoice(for: model),
+            "preset": settings.petKittenPreset,
+            "normalize": !Self.languageVoices.contains(settings.petKittenVoice),
+        ]
+        if !model.isExpressive { request["speed"] = settings.petVoiceSpeed }
+        _ = try await worker.send(request, timeout: 300)
+        kittenState = .ready
+        return out
+    }
+
+    /// Generated audio, by line and voice settings. Volume, speed and pitch apply at playback, so they don't count.
+    @ObservationIgnored private var audioCache: [String: URL] = [:]
+    @ObservationIgnored private var cacheOrder: [String] = []
+    @ObservationIgnored private var preparingKey: String?
+    @ObservationIgnored private var playWhenPrepared: Int?
+    private static let cacheLimit = 60
+
+    private static let cacheDirectory: URL = {
+        let url = FileManager.default.temporaryDirectory.appending(path: "moxie-pet-voice", directoryHint: .isDirectory)
+        // Audio from an earlier run isn't indexed any more.
+        try? FileManager.default.removeItem(at: url)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }()
+
+    private func storeInCache(_ key: String, _ file: URL) {
+        audioCache[key] = file
+        touchCache(key)
+        while cacheOrder.count > Self.cacheLimit {
+            let old = cacheOrder.removeFirst()
+            audioCache.removeValue(forKey: old).map { try? FileManager.default.removeItem(at: $0) }
+        }
+    }
+
+    private func touchCache(_ key: String) {
+        cacheOrder.removeAll { $0 == key }
+        cacheOrder.append(key)
+    }
+
+    private func clearCache() {
+        audioCache.values.forEach { try? FileManager.default.removeItem(at: $0) }
+        audioCache.removeAll()
+        cacheOrder.removeAll()
     }
 
     private func validKittenVoice(for model: KittenModel) -> String {
@@ -258,7 +351,7 @@ final class PetVoice {
         return Self.legacyVoices.contains(voice) ? voice : "Kiki"
     }
 
-    private func play(_ url: URL, rate: Double) throws {
+    private func play(_ url: URL) throws {
         let file = try AVAudioFile(forReading: url)
         let engine = audioEngine ?? AVAudioEngine()
         let player = self.player ?? AVAudioPlayerNode()
@@ -270,15 +363,15 @@ final class PetVoice {
             self.player = player
             self.timePitch = timePitch
         }
+        player.stop()
         engine.disconnectNodeOutput(player)
         engine.disconnectNodeOutput(timePitch)
         engine.connect(player, to: timePitch, format: file.processingFormat)
         engine.connect(timePitch, to: engine.mainMixerNode, format: file.processingFormat)
-        timePitch.rate = Float(min(2, max(0.5, rate)))
+        timePitch.rate = Float(min(2, max(0.5, playbackRate)))
         timePitch.pitch = Float(settings.petVoicePitch * 100)
         player.volume = Float(settings.petVoiceVolume)
         if !engine.isRunning { try engine.start() }
-        player.stop()
         isSpeaking = true
         let mine = generation
         player.scheduleFile(file, at: nil) { [weak self] in
@@ -303,14 +396,17 @@ final class PetVoice {
             try Self.workerScript.write(to: script, atomically: true, encoding: .utf8)
         }
         kittenState = .loading
+        let id = UUID()
         let worker = try Worker(python: python, script: script) { [weak self] in
             Task { @MainActor in
-                guard let self else { return }
+                // An old worker that was shut down must not drop the new one (it kept running, unused, with ~6 GB).
+                guard let self, self.workerID == id else { return }
                 self.worker = nil
                 if self.kittenState == .loading || self.kittenState == .ready { self.refreshKittenState() }
             }
         }
         self.worker = worker
+        workerID = id
         return worker
     }
 
@@ -335,6 +431,7 @@ final class PetVoice {
     func unload() {
         worker?.terminate()
         worker = nil
+        workerID = nil
         refreshKittenState()
     }
 
@@ -348,6 +445,7 @@ final class PetVoice {
     /// The model changed: the running worker holds the old one, so start fresh next time.
     func modelSettingsChanged() {
         unload()
+        clearCache()
     }
 
     // MARK: Installing
@@ -539,7 +637,13 @@ private final class Worker: @unchecked Sendable {
     }
 
     func terminate() {
-        if process.isRunning { process.terminate() }
+        guard process.isRunning else { return }
+        process.terminate()
+        // Busy in native code, Python can sit on SIGTERM; don't leave gigabytes behind.
+        let pid = process.processIdentifier
+        DispatchQueue.global().asyncAfter(deadline: .now() + 5) { [process] in
+            if process.isRunning { kill(pid, SIGKILL) }
+        }
     }
 
     private func received(_ data: Data) {

@@ -144,9 +144,11 @@ final class PetLineLibrary {
         gives it. Placeholders the app fills in: {task} (current task name), {level} (the pet's level), {streak} \
         (days in a row). {app} (the distraction) is ONLY for the drift moments and {pet} (a newly unlocked pet) ONLY \
         for newPet. Use placeholders in about half the lines; don't invent other placeholders.
-        Voice markup (the speech bubble hides it, the voice acts it out): start each line with one emotion tag from \
-        \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")); optionally add one sound from \
-        \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")); optionally wrap one key word in (((triple parentheses))).
+        Voice markup (the speech bubble hides it, the voice acts it out). EVERY line must start with exactly one \
+        emotion tag in square brackets, chosen from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")). \
+        Most lines also get one sound from \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")) where it fits, \
+        or one key word wrapped in (((triple parentheses))). Never write emotions as words, bold or labels (no **Angry**, no Angry:).
+        Example: [excited] <laugh> You closed {task}! That's (((huge))).
 
         Output format, nothing else (no headings, no numbering, no blank commentary), one line each:
         momentName: line
@@ -177,7 +179,7 @@ final class PetLineLibrary {
             guard let colon = row.firstIndex(of: ":") else { continue }
             let key = row[..<colon].trimmingCharacters(in: CharacterSet(charactersIn: "*` ")).lowercased()
             guard let event = events[key] else { continue }
-            let line = normalize(String(row[row.index(after: colon)...]), petName: petName)
+            let line = normalize(String(row[row.index(after: colon)...]), petName: petName, event: event)
             guard isUsable(line, for: event), !addressesPet(line, petName: petName),
                   !(result[event.rawValue]?.contains(line) ?? false) else { continue }
             result[event.rawValue, default: []].append(line)
@@ -185,26 +187,16 @@ final class PetLineLibrary {
         return result.mapValues { Array($0.prefix(linesPerMoment + 2)) }
     }
 
-    /// Fixes common slips: "Blip: …" speaker prefixes, quotes, and (gasp) instead of <gasp>.
-    private static func normalize(_ text: String, petName: String) -> String {
+    /// Fixes common slips: "Blip: …" speaker prefixes and quotes; markup slips are fixed by `PetSpeech.normalize`.
+    private static func normalize(_ text: String, petName: String, event: PetEvent) -> String {
         var line = text.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\"“”"))
         for prefix in [petName, "Pet", "\(petName) says"] where !prefix.isEmpty {
             if line.lowercased().hasPrefix(prefix.lowercased() + ":") {
                 line = String(line.dropFirst(prefix.count + 1)).trimmingCharacters(in: .whitespaces)
             }
         }
-        line = line.replacingOccurrences(of: "*", with: "").trimmingCharacters(in: CharacterSet(charactersIn: "\"“” "))
-        line = spelledEmotion.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "[$1$2] ")
-        return parenthesisedEvent.stringByReplacingMatches(in: line, range: NSRange(line.startIndex..., in: line), withTemplate: "<$1>")
+        return PetSpeech.normalize(line, defaultEmotion: PetSpeech.defaultEmotion(for: event))
     }
-
-    /// "Nervous: Oh no…" → "[nervous] Oh no…"
-    private static let spelledEmotion = try! NSRegularExpression(
-        pattern: "^[(\\[]?(\(PetSpeech.emotions.joined(separator: "|")))[)\\]]?\\s*:\\s*|^\\((\(PetSpeech.emotions.joined(separator: "|")))\\)\\s*",
-        options: .caseInsensitive)
-
-    private static let parenthesisedEvent = try! NSRegularExpression(
-        pattern: "(?<!\\()\\((\(PetSpeech.events.joined(separator: "|")))\\)(?!\\))", options: .caseInsensitive)
 
     /// Small models mix up who's who and call the user by the pet's name ("Welcome back, Blip!").
     private static func addressesPet(_ line: String, petName: String) -> Bool {
@@ -214,7 +206,7 @@ final class PetLineLibrary {
         return shown.hasPrefix(name + ",") || shown.contains(", " + name)
     }
 
-    private static func isUsable(_ line: String, for event: PetEvent) -> Bool {
+    static func isUsable(_ line: String, for event: PetEvent) -> Bool {
         let shown = PetSpeech.display(line)
         guard !shown.isEmpty, line.count <= 200, !shown.contains("[") && !shown.contains("<"),
               shown.split(separator: " ").count <= 22, !shown.lowercased().contains("parenthes"), !shown.hasPrefix("(") else { return false }
