@@ -181,7 +181,7 @@ private struct MenuBarMenu: View {
             delegate.panelController?.setVisible(true)
             ui.expand(route: .addEntry)
         }
-        Toggle("I'm in a Call", isOn: Binding(get: { calls.inCall }, set: { calls.manualCall = $0 }))
+        Toggle("I'm in a Call", isOn: Binding(get: { calls.inCall }, set: { if $0 != calls.inCall { calls.toggle() } }))
             .help("Pauses breaks and nudges while the timer keeps tracking. Calls using the microphone are detected automatically.")
         Button("Show / Hide Widget") {
             delegate.panelController?.setVisible(!(delegate.panelController?.isVisible ?? false))

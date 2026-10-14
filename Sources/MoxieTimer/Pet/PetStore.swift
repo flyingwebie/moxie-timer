@@ -399,7 +399,7 @@ final class PetStore {
         // Lines carry voice markup ([excited], <laugh>…); the bubble shows them without it.
         // A line prepared ahead of time (AI text and voice audio) is used first, so it plays at once.
         let prepared = upNext.removeValue(forKey: event)
-        let spoken = fill(prepared ?? PetSpeech.withEmotion(pickLine(for: event), default: PetSpeech.defaultEmotion(for: event)))
+        let spoken = fill(prepared ?? PetSpeech.withEmotion(pickLine(for: event), default: PetSpeech.defaultEmotion(for: event)), for: event)
         let text = PetSpeech.display(spoken)
         guard !text.isEmpty else { return }
         line = text
@@ -444,6 +444,27 @@ final class PetStore {
         return library.lines(for: event, tone: resolved)?.randomElement() ?? PetPhrases.line(for: event, tone: resolved)
     }
 
+    /// The name call ("David, listen up!") in front of a line, if it's on for this moment.
+    private func calls(for event: PetEvent) -> Bool {
+        switch settings.petCallMode {
+        case "all": return true
+        case "nudges": return event.isDrift
+        default: return false
+        }
+    }
+
+    private func userNameHint(for event: PetEvent) -> String {
+        let name = settings.petUserName.trimmingCharacters(in: .whitespaces)
+        var hint = name.isEmpty ? "" : " The user's name is \(name)."
+        if calls(for: event) { hint += " Don't start with their name: the app puts a call to them in front of your line." }
+        return hint
+    }
+
+    private func fill(_ template: String, for event: PetEvent) -> String {
+        let filled = fill(template)
+        return calls(for: event) ? PetSpeech.calling(filled, name: settings.petUserName, word: settings.petCallWord) : filled
+    }
+
     private func fill(_ template: String) -> String {
         template
             .replacingOccurrences(of: "{task}", with: activity.currentTaskName)
@@ -455,7 +476,7 @@ final class PetStore {
     }
 
     private func writeWithAI(_ event: PetEvent, replacing placeholder: String, thenSpeak fallback: String?) async {
-        let written = await aiLine(for: event, drift: activity.driftLabel).map(fill)
+        let written = await aiLine(for: event, drift: activity.driftLabel).map { fill($0, for: event) }
         // Only swap if the built-in line is still showing.
         guard line == placeholder else { return }
         if let written {
@@ -481,7 +502,7 @@ final class PetStore {
         You are \(settings.petName), a tiny blob-spirit mascot that lives next to a focus timer and helps a person \
         with ADHD stay on task. Your tone: \(toneDescription).\(style.isEmpty ? "" : " The user asked you to talk like this: \(style).") \
         Reply with ONE short line, at most 16 words, no quotes, no markdown, at most one emoji. Write {task} where you'd \
-        say the task's name; the app fills it in.\(Self.expressionRules)
+        say the task's name; the app fills it in.\(userNameHint(for: event))\(Self.expressionRules)
         """
         let prompt = """
         Situation: \(event.situation)
@@ -499,10 +520,9 @@ final class PetStore {
     }
 
     private static let expressionRules = """
-     The voice acts the line out from markup the bubble hides. ALWAYS start with exactly one emotion tag in square \
-    brackets from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")). Where it fits, add one sound from \
-    \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")) and wrap one key word in (((triple parentheses))) to stress it. \
-    Never write the emotion as a word, label or bold text. Example: [stern] <scoff> Five minutes gone. Back to {task}, (((now))).
+     The voice acts the line out from tags the bubble hides. \(PetSpeech.tagFormatHelp) ALWAYS start with exactly \
+    one emotion; where it fits, add one sound and stress one key word. Never write the emotion as a plain word, label or \
+    bold text. Example: [stern] [scoff] Five minutes gone. Back to {task}, [stress: now].
     """
 
     // MARK: Lines prepared ahead
@@ -518,7 +538,8 @@ final class PetStore {
     private func prepareLines(now: Date) {
         // What the pet would say changed (tone, style, own lines…): prepare again.
         let signature = [settings.petTone, settings.petStyle, settings.petName, "\(settings.petUseAI)", settings.petDriftLines,
-                         settings.petPraiseLines, "\(library.saved?.createdAt.timeIntervalSince1970 ?? 0)"].joined(separator: "|")
+                         settings.petPraiseLines, settings.petUserName, settings.petCallMode,
+                         "\(library.saved?.createdAt.timeIntervalSince1970 ?? 0)"].joined(separator: "|")
         if signature != preparedSignature {
             resetPreparedLines()
             preparedSignature = signature
@@ -545,7 +566,7 @@ final class PetStore {
                 }
                 // {app} is only known at the moment itself, so those lines are voiced live.
                 if let template = upNext[event], !template.contains("{app}"), voice.engine == .kitten, voice.kittenState == .ready {
-                    await voice.prepare(fill(template))
+                    await voice.prepare(fill(template, for: event))
                 }
             }
         }

@@ -1,7 +1,8 @@
 import Foundation
 
-/// Expression markup in pet lines, in KittenTTS 2's syntax:
-/// a leading `[emotion]`, inline `<event>` beats and `(((emphasis)))`.
+/// Expression markup in pet lines. People write one format, all in square brackets: `[joyful]` (emotion, at the start),
+/// `[laugh]` (sound, anywhere) and `[stress: word]`. Internally lines use KittenTTS 2's own syntax —
+/// `[emotion]`, `<event>`, `(((emphasis)))` — and `repair` converts to it.
 /// The bubble shows the line without markup; voices use it to colour the delivery.
 enum PetSpeech {
     static let emotions = ["angry", "contemplative", "excited", "joyful", "mundane", "nervous", "sad", "stern", "surprised", "tender"]
@@ -13,7 +14,7 @@ enum PetSpeech {
 
     /// The line as shown in the bubble.
     static func display(_ text: String) -> String {
-        var result = replace(emotionPattern, in: text, with: "")
+        var result = replace(emotionPattern, in: repair(text), with: "")
         result = replace(eventPattern, in: result, with: " ")
         result = replace(emphasisPattern, in: result, with: "$1")
         return tidy(result)
@@ -26,6 +27,7 @@ enum PetSpeech {
 
     /// The leading emotion, if any.
     static func emotion(of text: String) -> String? {
+        let text = repair(text)
         let range = NSRange(text.startIndex..., in: text)
         guard let match = emotionPattern.firstMatch(in: text, range: range),
               let tag = Range(match.range(at: 1), in: text) else { return nil }
@@ -35,7 +37,7 @@ enum PetSpeech {
     /// For voices without expression support: the line split at `<pause>` beats, with the other
     /// beats turned into sounds a normal voice can say ("ha ha!", "hmm.").
     static func plainSegments(_ text: String) -> [String] {
-        var result = replace(emotionPattern, in: text, with: "")
+        var result = replace(emotionPattern, in: repair(text), with: "")
         result = replace(emphasisPattern, in: result, with: "$1")
         let spoken: [String: String] = [
             "laugh": "ha ha!", "giggle": "hee hee!", "sigh": "hmm.", "gasp": "oh!", "um": "um,",
@@ -62,9 +64,13 @@ enum PetSpeech {
     }
 
     /// Makes sure a line starts with an emotion tag.
+    /// Makes sure a line starts with an emotion tag: KittenTTS only reads one at the very start.
     static func withEmotion(_ text: String, default emotion: String) -> String {
-        guard hasWords(text), self.emotion(of: text) == nil else { return text }
-        return "[\(emotion)] \(text)"
+        guard hasWords(text) else { return text }
+        let repaired = repair(text)
+        let found = self.emotion(of: repaired)
+        let body = tidy(replace(emotionPattern, in: repaired, with: ""))
+        return "[\(found ?? emotion)] \(body)"
     }
 
     /// Tidies a line written by AI: markdown labels like "**Angry**" or "Nervous:" become tags,
@@ -73,9 +79,10 @@ enum PetSpeech {
         var line = text.trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"“”'"))
         line = replace(boldEmotion, in: line, with: "[$1]")
+        line = repair(line)
         line = line.replacingOccurrences(of: "*", with: "").replacingOccurrences(of: "`", with: "")
         line = replace(labelledEmotion, in: line, with: "$1[$2$3] ")
-        line = replace(parenthesisedEvent, in: line, with: "<$1>")
+        line = repair(line)
 
         // KittenTTS reads one leading emotion: keep the first one found and put it in front.
         let range = NSRange(line.startIndex..., in: line)
@@ -97,8 +104,57 @@ enum PetSpeech {
 
     /// The line as sent to a voice: emoji removed (Mac voices read their names out loud).
     static func spoken(_ text: String) -> String {
-        tidy(String(text.filter { !$0.isEmoji }))
+        tidy(String(repair(text).filter { !$0.isEmoji }))
     }
+
+    /// Fixes tags in the wrong brackets, as people type them: [laugh], (laugh) or *laugh* → <laugh>,
+    /// and <excited> → [excited]. Otherwise the voice reads the word out loud.
+    static func repair(_ text: String) -> String {
+        var result = replace(stressTag, in: text, with: "((($1)))")
+        result = replace(misbracketedEvent, in: result, with: "<$1>")
+        result = replace(parenthesisedEvent, in: result, with: "<$1>")
+        return replace(misbracketedEmotion, in: result, with: "[$1]")
+    }
+
+    /// The format people write, for examples and the AI prompts.
+    static let tagFormatHelp = """
+    All tags go in square brackets. Emotion, once at the start: \(emotions.map { "[\($0)]" }.joined(separator: " ")). \
+    Sound, anywhere: \(events.map { "[\($0)]" }.joined(separator: " ")). Stress one word: [stress: word].
+    """
+
+    /// Starts a line with a call to get the user's attention ("David, listen up!"), keeping its emotion in front.
+    /// A name the line already opens with is dropped, so it isn't said twice.
+    static func calling(_ text: String, name: String, word: String) -> String {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        let word = word.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "!.,"))
+        guard hasWords(text), !(name.isEmpty && word.isEmpty) else { return text }
+        let repaired = repair(text)
+        let emotion = self.emotion(of: repaired)
+        var body = tidy(replace(emotionPattern, in: repaired, with: ""))
+        if !name.isEmpty {
+            let leadingName = try! NSRegularExpression(
+                pattern: "^((?:<\\w+>\\s*)*)\(NSRegularExpression.escapedPattern(for: name))\\b[\\s,!.:;—-]*", options: .caseInsensitive)
+            body = replace(leadingName, in: body, with: "$1")
+            // Capitalise the first word after any leading sounds ("<scoff> back to…" → "<scoff> Back to…").
+            let tags = try! NSRegularExpression(pattern: "^(?:\\s*<\\w+>)*\\s*")
+            let skip = tags.firstMatch(in: body, range: NSRange(body.startIndex..., in: body)).flatMap { Range($0.range, in: body) }
+            let start = skip?.upperBound ?? body.startIndex
+            if start < body.endIndex, body[start].isLetter {
+                body.replaceSubrange(start...start, with: body[start].uppercased())
+            }
+        }
+        var call = [name, word].filter { !$0.isEmpty }.joined(separator: ", ")
+        call = call.prefix(1).uppercased() + call.dropFirst() + "!"
+        return [emotion.map { "[\($0)]" }, call, body].compactMap { $0 }.joined(separator: " ")
+    }
+
+    private static let stressTag = try! NSRegularExpression(pattern: "\\[\\s*(?:stress|emphasis)\\s*:\\s*([^\\]]+?)\\s*\\]", options: .caseInsensitive)
+
+    private static let misbracketedEvent = try! NSRegularExpression(
+        pattern: "(?:\\[|\\*)(\(events.joined(separator: "|")))(?:\\]|\\*)", options: .caseInsensitive)
+
+    private static let misbracketedEmotion = try! NSRegularExpression(
+        pattern: "<(\(emotions.joined(separator: "|")))>", options: .caseInsensitive)
 
     private static let boldEmotion = try! NSRegularExpression(
         pattern: "[*_]{1,2}\\s*(\(emotions.joined(separator: "|")))\\s*[*_]{1,2}", options: .caseInsensitive)

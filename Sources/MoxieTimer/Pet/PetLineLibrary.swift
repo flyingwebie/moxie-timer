@@ -140,15 +140,14 @@ final class PetLineLibrary {
 
         Write \(Self.linesPerMoment) different lines for EACH moment the prompt lists. Every line: at most 14 words, \
         no quotes, at most one emoji, sounds natural spoken aloud, and is different from the others.
-        The pet speaks in the first person as \(settings.petName); it doesn't know the user's name unless the style above \
-        gives it. Placeholders the app fills in: {task} (current task name), {level} (the pet's level), {streak} \
+        The pet speaks in the first person as \(settings.petName); \(settings.petUserName.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "it doesn't know the user's name unless the style above gives it" : "the user's name is \(settings.petUserName.trimmingCharacters(in: .whitespaces))"). Placeholders the app fills in: {task} (current task name), {level} (the pet's level), {streak} \
         (days in a row). {app} (the distraction) is ONLY for the drift moments and {pet} (a newly unlocked pet) ONLY \
         for newPet. Use placeholders in about half the lines; don't invent other placeholders.
-        Voice markup (the speech bubble hides it, the voice acts it out). EVERY line must start with exactly one \
-        emotion tag in square brackets, chosen from \(PetSpeech.emotions.map { "[\($0)]" }.joined(separator: " ")). \
-        Most lines also get one sound from \(PetSpeech.events.map { "<\($0)>" }.joined(separator: " ")) where it fits, \
-        or one key word wrapped in (((triple parentheses))). Never write emotions as words, bold or labels (no **Angry**, no Angry:).
-        Example: [excited] <laugh> You closed {task}! That's (((huge))).
+        Voice tags (the speech bubble hides them, the voice acts them out). \(PetSpeech.tagFormatHelp)
+        EVERY line must start with exactly one emotion. Most lines also get one sound where it fits, or one stressed word. \
+        Never write emotions as plain words, bold or labels (no **Angry**, no Angry:).
+        Example: [excited] [laugh] You closed {task}! That's [stress: huge].
 
         Output format, nothing else (no headings, no numbering, no blank commentary), one line each:
         momentName: line

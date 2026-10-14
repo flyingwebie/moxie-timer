@@ -17,6 +17,22 @@ final class CallDetector {
         didSet { update(now: .now) }
     }
 
+    /// "Not in a call" pressed while the mic is busy: ignore detection until the mic goes quiet.
+    private(set) var dismissedDetection = false {
+        didSet { update(now: .now) }
+    }
+
+    /// The pill's call button and the menu bar: flips between in a call and not.
+    func toggle() {
+        if inCall {
+            if manualCall { manualCall = false }
+            if inCall { dismissedDetection = true }
+        } else {
+            dismissedDetection = false
+            manualCall = true
+        }
+    }
+
     @ObservationIgnored var onChange: (() -> Void)?
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private var detected = false
@@ -53,8 +69,10 @@ final class CallDetector {
             quietSince = since
             if now.timeIntervalSince(since) >= Self.endAfter { detected = false }
         }
+        // The dismissed call ended: the next one is detected again.
+        if !detected, dismissedDetection { dismissedDetection = false; return }
 
-        let newValue = manualCall || (settings.detectCalls && detected)
+        let newValue = manualCall || (settings.detectCalls && detected && !dismissedDetection)
         if newValue != inCall {
             inCall = newValue
             if !newValue { manualCall = false }

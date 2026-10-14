@@ -52,6 +52,7 @@ struct PetVoiceSettingsSection: View {
                         Button("Stop") { voice.stop() }.controlSize(.small)
                     }
                 }
+                PetLineTester()
                 if let error = voice.lastError {
                     Text(error).font(.system(size: 10)).foregroundStyle(Theme.onBreak).fixedSize(horizontal: false, vertical: true)
                 }
@@ -158,7 +159,7 @@ struct PetVoiceSettingsSection: View {
                 .frame(width: 170)
             }
             toggle("Act out expressions", isOn: $settings.petVoiceExpressions)
-            note("Lines carry tags like [excited], <laugh>, <sigh> and (((emphasis))). The bubble hides them, and KittenTTS 2 performs them. Add them to your own lines too.")
+            note("Lines carry tags like [excited], [laugh] and [stress: word]. The bubble hides them, and KittenTTS 2 performs them. See “Try a line” below for what each one does.")
         }
 
         row("Keep the model loaded") {
@@ -297,6 +298,98 @@ struct PetVoiceSettingsSection: View {
             .font(.system(size: 10))
             .foregroundStyle(Theme.faint)
             .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+/// Settings → Pet voice: type a line with voice tags and hear it. Clicking a tag copies it, to paste into your own lines.
+private struct PetLineTester: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(PetVoice.self) private var voice
+    @State private var text = "[joyful] Well done! [laugh] That's [stress: huge]."
+    @State private var copied: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Try a line").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
+            HStack(spacing: 6) {
+                FieldBox {
+                    TextField("[excited] Type a line… [laugh]", text: $text)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .onSubmit(speak)
+                }
+                Button("Speak", action: speak)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(!PetSpeech.hasWords(text) || (voice.engine == .kitten && voice.kittenState == .installing))
+            }
+            Text("Every tag goes in square brackets. Click one to copy it and add it to the line above.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+
+            tagGroup("Emotions — change the voice",
+                     "Sets the mood of the whole line: tone, energy and pace change for every word. Use one, at the very start.",
+                     PetSpeech.emotions.map { "[\($0)]" })
+            tagGroup("Sounds — a moment, not a mood",
+                     "Adds one sound where you put it (a laugh, a sigh, a pause). The voice around it stays the same.",
+                     PetSpeech.events.map { "[\($0)]" })
+            tagGroup("Stress — one word",
+                     "Says that word with more weight. Replace “word” with yours.",
+                     ["[stress: word]"])
+            Text(voice.engine == .kitten && voice.understandsExpressions
+                 ? "KittenTTS 2 performs all three."
+                 : "Only KittenTTS 2 with “Act out expressions” performs these fully. Mac voices shift pitch and pace a little for emotions and say sounds as words (“ha ha”, “hmm”); stress is ignored.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let copied {
+                Text("Copied \(copied) — paste it into your lines.")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.onBreak)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func tagGroup(_ title: String, _ detail: String, _ tags: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.ink.opacity(0.8))
+            Text(detail)
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            FlowLayout(spacing: 4) {
+                ForEach(tags, id: \.self) { tag in
+                    Button(tag) { use(tag) }
+                        .buttonStyle(ChipButtonStyle())
+                        .help("Copy \(tag)")
+                }
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    private func use(_ tag: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(tag, forType: .string)
+        copied = tag
+        let isEmotion = PetSpeech.emotions.contains(tag.trimmingCharacters(in: CharacterSet(charactersIn: "[]")))
+        if isEmotion {
+            // One emotion, at the start: replace the current one.
+            var body = text
+            for emotion in PetSpeech.emotions {
+                body = body.replacingOccurrences(of: "[\(emotion)]", with: "", options: .caseInsensitive)
+            }
+            text = tag + " " + body.trimmingCharacters(in: .whitespaces)
+        } else {
+            text = text.trimmingCharacters(in: .whitespaces) + " " + tag
+        }
+    }
+
+    private func speak() {
+        guard PetSpeech.hasWords(text) else { return }
+        let line = text.replacingOccurrences(of: "{name}", with: settings.petName)
+        voice.speak(PetSpeech.emotion(of: line) == nil ? line : PetSpeech.withEmotion(line, default: "mundane"))
     }
 }
 

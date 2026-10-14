@@ -210,13 +210,43 @@ struct PetSettingsSection: View {
                 .frame(width: 150)
             }
 
+            HStack {
+                Text("Your name").font(.system(size: 12))
+                Spacer()
+                FieldBox { TextField("David", text: $settings.petUserName).textFieldStyle(.plain).font(.system(size: 12)) }
+                    .frame(width: 150)
+            }
+            HStack {
+                Text("Call my name first").font(.system(size: 12))
+                Spacer()
+                Picker("Call my name first", selection: $settings.petCallMode) {
+                    Text("Off").tag("off")
+                    Text("When nudging me").tag("nudges")
+                    Text("Every line").tag("all")
+                }
+                .labelsHidden()
+                .frame(width: 150)
+            }
+            if settings.petCallMode != "off" {
+                HStack {
+                    Text("Hot word").font(.system(size: 12))
+                    Spacer()
+                    FieldBox { TextField("listen up", text: $settings.petCallWord).textFieldStyle(.plain).font(.system(size: 12)) }
+                        .frame(width: 150)
+                }
+                Text(callPreview)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
             editor("Talk to me like…", text: $settings.petStyle,
                    placeholder: "e.g. Call me Davide, speak Italian, football metaphors, a bit sarcastic")
             editor("Your praise lines (one per line)", text: $settings.petPraiseLines,
                    placeholder: "Grande Davide! 🔥\nAnother one bites the dust")
             editor("Your get-back-on-track lines (one per line)", text: $settings.petDriftLines,
                    placeholder: "{app} again? {task} is waiting.\nPhone down, Davide.")
-            Text("Use {task}, {app}, {name}, {level} or {streak} in your lines. Voices also understand [excited], <laugh> and (((emphasis))).")
+            Text("Use {task}, {app}, {name}, {level} or {streak} in your lines. Add voice tags in square brackets, like “[joyful] Well done! [laugh] That's [stress: huge].” Copy tags and try lines in Pet voice → Try a line.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -233,6 +263,14 @@ struct PetSettingsSection: View {
 
             PetLinesWriter()
         }
+    }
+
+    private var callPreview: String {
+        let sample = PetSpeech.calling("Back to your task.", name: settings.petUserName, word: settings.petCallWord)
+        let when = settings.petCallMode == "all" ? "Every line starts" : "Nudges (drifting, timer off) start"
+        return settings.petUserName.trimmingCharacters(in: .whitespaces).isEmpty && settings.petCallWord.trimmingCharacters(in: .whitespaces).isEmpty
+            ? "Add your name or a hot word."
+            : "\(when) like this: “\(PetSpeech.display(sample))” The call keeps the line's emotion."
     }
 
     private func editor(_ title: String, text: Binding<String>, placeholder: String) -> some View {

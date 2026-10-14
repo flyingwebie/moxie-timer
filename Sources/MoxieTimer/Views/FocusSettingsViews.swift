@@ -348,7 +348,7 @@ private struct FlowChips: View {
     }
 }
 
-private struct FlowLayout: Layout {
+struct FlowLayout: Layout {
     var spacing: CGFloat = 6
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -442,7 +442,7 @@ struct CallSettingsSection: View {
                 Circle().fill(calls.inCall ? Theme.running : Theme.faint).frame(width: 7, height: 7)
                 Text(calls.inCall ? "In a call now" : "Not in a call").font(.system(size: 12, weight: .semibold))
                 Spacer()
-                Toggle("Manual", isOn: Binding(get: { calls.manualCall }, set: { calls.manualCall = $0 }))
+                Toggle("Manual", isOn: Binding(get: { calls.inCall }, set: { if $0 != calls.inCall { calls.toggle() } }))
                     .toggleStyle(.checkbox).font(.system(size: 11))
                     .help("Mark yourself in a call by hand (also in the menu bar)")
             }

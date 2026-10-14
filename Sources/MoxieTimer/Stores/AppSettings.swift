@@ -88,6 +88,11 @@ final class AppSettings {
     var petPraiseLines: String { didSet { defaults.set(petPraiseLines, forKey: "petPraiseLines") } }
     var petDriftLines: String { didSet { defaults.set(petDriftLines, forKey: "petDriftLines") } }
     var petUseAI: Bool { didSet { defaults.set(petUseAI, forKey: "petUseAI") } }
+    /// The user's own name, for the pet to call them by.
+    var petUserName: String { didSet { defaults.set(petUserName, forKey: "petUserName") } }
+    /// When the pet opens a line with "<name>, <hot word>!": "off", "nudges" or "all".
+    var petCallMode: String { didSet { defaults.set(petCallMode, forKey: "petCallMode") } }
+    var petCallWord: String { didSet { defaults.set(petCallWord, forKey: "petCallWord") } }
     /// PetAccessory raw value or "auto".
     var petAccessory: String { didSet { defaults.set(petAccessory, forKey: "petAccessory") } }
 
@@ -186,6 +191,9 @@ final class AppSettings {
         petPraiseLines = defaults.string(forKey: "petPraiseLines") ?? ""
         petDriftLines = defaults.string(forKey: "petDriftLines") ?? ""
         petUseAI = defaults.object(forKey: "petUseAI") as? Bool ?? false
+        petUserName = defaults.string(forKey: "petUserName") ?? ""
+        petCallMode = defaults.string(forKey: "petCallMode") ?? "off"
+        petCallWord = defaults.string(forKey: "petCallWord") ?? "listen up"
         petAccessory = defaults.string(forKey: "petAccessory") ?? "auto"
         petVoiceEngine = defaults.string(forKey: "petVoiceEngine") ?? "off"
         petVoiceImportantOnly = defaults.object(forKey: "petVoiceImportantOnly") as? Bool ?? false

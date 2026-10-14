@@ -74,14 +74,22 @@ struct PillBar: View {
             .buttonStyle(.plain)
             .help("Add a time entry manually")
 
+            Button { calls.toggle() } label: {
+                Image(systemName: calls.inCall ? "phone.fill" : "phone")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(calls.inCall ? .white : Theme.navy)
+                    .frame(width: 34, height: 34)
+                    .background(RoundedRectangle(cornerRadius: 9).fill(calls.inCall ? Theme.running : Theme.pill))
+                    .overlay(RoundedRectangle(cornerRadius: 9).strokeBorder(calls.inCall ? .clear : Theme.navy.opacity(0.35)))
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help(calls.inCall
+                  ? "In a call\(calls.micApps.isEmpty ? "" : " (\(calls.micApps.joined(separator: ", ")))") — breaks, nudges and the pet wait; the timer keeps tracking. Click when the call is over."
+                  : "Click when you're in a call: breaks, nudges and the pet wait, the timer keeps tracking.")
+
             HStack(spacing: 6) {
                 HStack(spacing: 7) {
-                    if calls.inCall {
-                        Image(systemName: "phone.fill")
-                            .font(.system(size: 9, weight: .bold))
-                            .foregroundStyle(Theme.running)
-                            .help("In a call\(calls.micApps.isEmpty ? "" : " (\(calls.micApps.joined(separator: ", ")))") — breaks and nudges wait; the timer keeps tracking.")
-                    }
                     Circle()
                         .fill(dotColor)
                         .frame(width: 7, height: 7)
@@ -146,7 +154,8 @@ struct PillBar: View {
             }
             .padding(.trailing, 4)
             .frame(height: 36)
-            .background(Capsule().fill(alerting ? Theme.onBreak.opacity(0.15) : Theme.pill))
+            // Opaque, so the pill stays readable over dark windows; the orange tint sits on top.
+            .background(Capsule().fill(Theme.pill).overlay(Capsule().fill(Theme.onBreak.opacity(alerting ? 0.15 : 0))))
             .overlay(Capsule().strokeBorder(alerting ? Theme.onBreak : Theme.navy.opacity(0.35), lineWidth: alerting ? 1.5 : 1))
             .shadow(color: .black.opacity(0.12), radius: 6, y: 2)
         }
