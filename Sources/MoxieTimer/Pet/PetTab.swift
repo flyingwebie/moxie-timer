@@ -8,6 +8,8 @@ struct PetTab: View {
                 PetSettingsSection()
                 Divider()
                 PetVoiceSettingsSection()
+                Divider()
+                VoiceModelsSection()
             }
             .padding(16)
         }

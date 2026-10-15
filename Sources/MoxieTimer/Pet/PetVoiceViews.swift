@@ -227,7 +227,7 @@ struct PetVoiceSettingsSection: View {
 
     @ViewBuilder private var vibeOptions: some View {
         @Bindable var settings = settings
-        note("Microsoft's long-form voice model, very natural in English (and Chinese). It copies the voice of a short recording: pick one of Microsoft's demo voices or use your own sample. No emotions. Takes 5–10 seconds per line, so the pet prepares its next lines in the background.")
+        note("Microsoft's long-form voice model, very natural in English (and Chinese). It copies the voice of a short recording: pick one of Microsoft's demo voices or use your own sample. It has no emotion tags: the mood comes from the words of the line and the tone of the recording. Takes 5–10 seconds per line, so the pet prepares its next lines in the background.")
         row("Voice") {
             Picker("Voice", selection: Binding(get: { settings.petVibeVoice }, set: {
                 settings.petVibeVoice = $0
@@ -266,12 +266,8 @@ struct PetVoiceSettingsSection: View {
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 6) {
                 if voice.engine == .kitten { kittenPython }
-                if !voice.usesCustomPython, voice.localState != .notInstalled, voice.localState != .installing {
-                    HStack {
-                        note("The environment lives in ~/.moxie-timer/voice/\(voice.engine.environmentName). Models are cached in ~/.cache/huggingface.")
-                        Spacer()
-                        Button("Remove", role: .destructive) { voice.removeInstall() }.controlSize(.small)
-                    }
+                if !voice.usesCustomPython {
+                    note("The environment lives in ~/.moxie-timer/voice/\(voice.engine.environmentName). Models are cached in ~/.cache/huggingface. Remove them in “Voice models on this Mac” below.")
                 }
                 note(licenseNote)
             }
@@ -475,7 +471,7 @@ private struct VoiceSampleRow: View {
 private struct PetLineTester: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PetVoice.self) private var voice
-    @State private var text = "[joyful] Well done! [laugh] That's [stress: huge]."
+    @State private var text = ""
     @State private var copied: String?
 
     var body: some View {
@@ -492,26 +488,34 @@ private struct PetLineTester: View {
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(!PetSpeech.hasWords(text) || (voice.engine.isLocal && voice.localState == .installing))
             }
-            Text("Every tag goes in square brackets. Click one to copy it and add it to the line above.")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.faint)
-                .fixedSize(horizontal: false, vertical: true)
+            let support = voice.tagSupport
+            if support.any {
+                Text("Tags go in square brackets. These are the ones this voice uses; click one to add it to the line above.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("This voice reads plain text: tags in a line are removed before it speaks. KittenTTS 2 performs emotions, sounds and stress; VoxCPM2 performs emotions.")
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
-            tagGroup("Emotions — change the voice",
-                     "Sets the mood of the whole line: tone, energy and pace change for every word. Use one, at the very start.",
-                     PetSpeech.emotions.map { "[\($0)]" })
-            tagGroup("Sounds — a moment, not a mood",
-                     "Adds one sound where you put it (a laugh, a sigh, a pause). The voice around it stays the same.",
-                     PetSpeech.events.map { "[\($0)]" })
-            tagGroup("Stress — one word",
-                     "Says that word with more weight. Replace “word” with yours.",
-                     ["[stress: word]"])
-            Text(voice.understandsExpressions
-                 ? "KittenTTS 2 performs all three."
-                 : "Only KittenTTS 2 with “Act out expressions” performs these fully. VoxCPM2 acts out emotions as a style direction. The other voices say sounds as words (“ha ha”, “hmm”) and ignore stress; Mac voices also shift pitch and pace a little for emotions.")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.faint)
-                .fixedSize(horizontal: false, vertical: true)
+            if let how = support.emotions {
+                tagGroup("Emotions — change the voice",
+                         "Sets the mood of the whole line. Use one, at the very start. \(how)",
+                         PetSpeech.emotions.map { "[\($0)]" })
+            }
+            if let how = support.sounds {
+                tagGroup("Sounds — a moment, not a mood",
+                         "Adds one sound where you put it (a laugh, a sigh, a pause). \(how)",
+                         PetSpeech.events.map { "[\($0)]" })
+            }
+            if let how = support.stress {
+                tagGroup("Stress — one word",
+                         "Says that word with more weight. Replace “word” with yours. \(how)",
+                         ["[stress: word]"])
+            }
             if let copied {
                 Text("Copied \(copied) — paste it into your lines.")
                     .font(.system(size: 10, weight: .semibold))
@@ -519,6 +523,20 @@ private struct PetLineTester: View {
             }
         }
         .padding(.top, 4)
+        .onAppear { if text.isEmpty { text = example } }
+        // A new voice gets an example it understands, unless the user typed their own line.
+        .onChange(of: voice.tagSupport.emotions) { if Self.examples.contains(text) { text = example } }
+        .onChange(of: voice.tagSupport.sounds) { if Self.examples.contains(text) { text = example } }
+    }
+
+    private static let examples = ["[joyful] Well done! [laugh] That's [stress: huge].", "[joyful] Well done! [laugh] That's huge.",
+                                   "[joyful] Well done! That's huge.", "Well done! That's huge."]
+
+    private var example: String {
+        let support = voice.tagSupport
+        if support.stress != nil { return Self.examples[0] }
+        if support.sounds != nil { return Self.examples[1] }
+        return support.emotions != nil ? Self.examples[2] : Self.examples[3]
     }
 
     private func tagGroup(_ title: String, _ detail: String, _ tags: [String]) -> some View {
