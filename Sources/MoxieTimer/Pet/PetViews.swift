@@ -341,7 +341,7 @@ struct SpeciesPicker: View {
     }
 }
 
-/// Settings → Your pet: have AI write the pet's whole set of lines in the user's tone and style.
+/// Pet & Voice tab: have AI write the pet's whole set of lines in the user's tone and style.
 struct PetLinesWriter: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AIService.self) private var ai

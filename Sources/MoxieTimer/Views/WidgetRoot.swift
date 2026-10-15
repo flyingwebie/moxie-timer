@@ -256,12 +256,13 @@ struct ExpandedCard: View {
                     case .focus: FocusTab()
                     case .timer: TimerTab()
                     case .recent: RecentTab()
+                    case .pet: PetTab()
                     }
                 }
             }
         }
         // Review gets more room for its timeline.
-        .frame(width: ui.route == .review ? 440 : 380)
+        .frame(width: ui.route == .review ? 520 : 460)
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(.white))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Theme.border))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
@@ -274,6 +275,7 @@ struct ExpandedCard: View {
                 tabButton("Focus", systemName: "scope", tab: .focus)
                 tabButton("Timer", systemName: "stopwatch", tab: .timer)
                 tabButton("Recent", systemName: "clock.arrow.circlepath", tab: .recent)
+                tabButton("Pet & Voice", systemName: "pawprint", tab: .pet)
             }
             .padding(3)
             .fixedSize()

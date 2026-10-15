@@ -75,7 +75,7 @@ there's an **I'm in a Call** switch in the menu bar for anything detection misse
 
 Start with the **blob spirit** and earn more pets as you level up and keep streaks: cat (Level 2), dog (2-day streak),
 plant (Level 3), ghost (3-day streak), robot (Level 5), **fox** (Level 7), **owl** (5-day streak) and **dragon** (Level 10).
-Unlocked pets stay unlocked (streak pets count your best streak ever). Choose in Settings → Your pet or by clicking the pet. It sits next to the pill. It glows and celebrates when you finish blocks and
+Unlocked pets stay unlocked (streak pets count your best streak ever). Choose in the Pet & Voice tab or by clicking the pet. It sits next to the pill. It glows and celebrates when you finish blocks and
 tasks, gets worried the moment you drift and stern if you stay there, sleeps during breaks, and talks to you in a
 speech bubble — with a **Back to it** button while you're drifting. It also appears in the drift prompt.
 
@@ -86,16 +86,16 @@ speech bubble — with a **Back to it** button while you're drifting. It also ap
 
 - **Levels & wardrobe:** XP (≈1 per focused minute plus bonuses) unlocks a sparkle, bow, sprout, beanie, scarf, crown
   and halo. Click the pet to see its mood, level and today's stats, and choose what it wears.
-- **Your tone** (Settings → Your pet): Warm & playful, Coach, Quiet or a mix; a "Talk to me like…" description; your own
+- **Your tone** (Pet & Voice tab): Warm & playful, Coach, Quiet or a mix; a "Talk to me like…" description; your own
   praise and get-back-on-track lines (with `{task}`, `{app}`, `{name}`, `{level}`, `{streak}`); and optionally AI-written
   lines in your style, in any language.
-- **Write new lines with AI** (Settings → Your pet): AI writes a fresh set of 4 lines for every moment (finishing,
+- **Write new lines with AI** (Pet & Voice tab): AI writes a fresh set of 4 lines for every moment (finishing,
   drifting, breaks…) in your tone, style and language, with voice expressions. It's told what the app does and doesn't
   do, so the pet never promises things like blocking sites. The lines are saved on this Mac
   (`~/Library/Application Support/MoxieTimer/pet-lines.json`) and replace the originals, so they stay instant and work
   offline. You can read them all, rewrite them, or go back to the originals. Claude, Codex, Gemini or a good Ollama
   model write much better lines than Apple's on-device model.
-- **Voice** (Settings → Pet voice): the pet can say its lines out loud, every line or only the important moments, and
+- **Voice** (Pet & Voice tab): the pet can say its lines out loud, every line or only the important moments, and
   never during calls. You can set volume, speed and pitch.
   - **Mac voices** work right away. Pick any installed voice (Premium/Enhanced ones sound best).
   - **KittenTTS** runs a local AI voice on this Mac. "Install KittenTTS" sets up a private Python environment in
@@ -103,12 +103,21 @@ speech bubble — with a **Back to it** button while you're drifting. It also ap
     about 6 GB of memory while loaded and takes 6–10 seconds per line, so while it's loaded the pet writes and voices
     its next line for each moment in the background and most lines play at once. **Mini/Micro/Nano** are tiny and
     instant but have no expressions. The model stays loaded for a time you choose, then frees its memory.
+  - **Kokoro** (82M) is a small, fast local voice: 28 English voices, almost instant, about 1.5 GB of memory, no
+    emotions. With the bundled inno-kokoro tuner it can copy a voice from a short recording.
+  - **VoxCPM2** (OpenBMB, 2B) speaks 30 languages. You describe the voice ("a small, cheerful creature…") or let it
+    copy a recording, and each line's emotion becomes a style direction. About 5–6 GB while loaded, 5–10 s per line.
+  - **VibeVoice** (Microsoft, 1.5B) sounds very natural in English and copies the voice of a recording: one of
+    Microsoft's demo voices or your own. About 4–5 GB while loaded, 5–10 s per line. Released for research use.
+  - Every local engine installs into its own environment in `~/.moxie-timer/voice/<engine>` (KittenTTS keeps
+    `venv`); models download to `~/.cache/huggingface`. A **voice sample** (5–30 s of one person speaking, any format
+    the Mac reads) is converted to a wav in `~/.moxie-timer/voice/samples` and shared by the engines that clone.
   - **Voice tags**, all in square brackets: an **emotion** at the start (`[joyful]`, `[stern]`…) changes the voice
     for the whole line (tone, energy, pace); a **sound** anywhere (`[laugh]`, `[sigh]`, `[pause]`…) adds one moment
     without changing the voice; `[stress: word]` puts weight on one word. The bubble hides them, KittenTTS 2 performs
-    them, and Mac voices approximate them with pitch, pace and "ha ha". Every line gets an emotion (one that fits the
+    them, VoxCPM2 acts out the emotion, Kokoro and VibeVoice say sounds as words, and Mac voices approximate them with pitch, pace and "ha ha". Every line gets an emotion (one that fits the
     moment if it has none), and AI replies are tidied into tags (a stray `**Angry**` becomes `[angry]`). Try lines and
-    copy tags in Settings → Pet voice → Try a line.
+    copy tags in the Pet & Voice tab → Try a line.
   - **Call my name first:** with your name and a hot word, the pet opens nudges (or every line) with
     "David, listen up!" in the line's emotion.
 

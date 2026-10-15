@@ -125,11 +125,9 @@ struct SettingsView: View {
 
             Divider()
 
-            PetSettingsSection()
-
-            Divider()
-
-            PetVoiceSettingsSection()
+            Text("The pet and its voice have their own tab: Pet & Voice.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
 
             Divider()
 

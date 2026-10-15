@@ -19,7 +19,7 @@ final class Clock {
 /// Which screen the expanded widget is showing.
 @MainActor @Observable
 final class WidgetUI {
-    enum Tab { case focus, timer, recent }
+    enum Tab { case focus, timer, recent, pet }
     enum Route { case settings, addEntry, tasks, capture, review }
 
     /// How the entry editor should open: blank, prefilled with a time range (filling a gap), or editing a held entry.

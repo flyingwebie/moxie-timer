@@ -121,6 +121,15 @@ final class AppSettings {
     var petKittenKeepLoadedMinutes: Int { didSet { defaults.set(petKittenKeepLoadedMinutes, forKey: "petKittenKeepLoadedMinutes") } }
     /// Python with `kittenml` installed; empty = the app's own environment.
     var petKittenPython: String { didSet { defaults.set(petKittenPython, forKey: "petKittenPython") } }
+    /// Kokoro voice id (af_heart…), or "sample" for a voice cloned from petVoiceSample.
+    var petKokoroVoice: String { didSet { defaults.set(petKokoroVoice, forKey: "petKokoroVoice") } }
+    /// VoxCPM2 voice design: a description of the voice, used when it doesn't clone the sample.
+    var petVoxDescription: String { didSet { defaults.set(petVoxDescription, forKey: "petVoxDescription") } }
+    var petVoxUseSample: Bool { didSet { defaults.set(petVoxUseSample, forKey: "petVoxUseSample") } }
+    /// VibeVoice demo voice (Alice…), or "sample".
+    var petVibeVoice: String { didSet { defaults.set(petVibeVoice, forKey: "petVibeVoice") } }
+    /// A short recording the local voices can clone (a wav the app made from the file the user picked); empty = none.
+    var petVoiceSample: String { didSet { defaults.set(petVoiceSample, forKey: "petVoiceSample") } }
 
     /// Detect calls (microphone in use) and pause breaks/nudges while one is on.
     var detectCalls: Bool { didSet { defaults.set(detectCalls, forKey: "detectCalls") } }
@@ -208,6 +217,11 @@ final class AppSettings {
         petVoiceExpressions = defaults.object(forKey: "petVoiceExpressions") as? Bool ?? true
         petKittenPython = defaults.string(forKey: "petKittenPython") ?? ""
         petKittenKeepLoadedMinutes = defaults.object(forKey: "petKittenKeepLoadedMinutes") as? Int ?? 60
+        petKokoroVoice = defaults.string(forKey: "petKokoroVoice") ?? "af_heart"
+        petVoxDescription = defaults.string(forKey: "petVoxDescription") ?? "A small, cheerful creature with a bright, warm voice"
+        petVoxUseSample = defaults.object(forKey: "petVoxUseSample") as? Bool ?? false
+        petVibeVoice = defaults.string(forKey: "petVibeVoice") ?? "Alice"
+        petVoiceSample = defaults.string(forKey: "petVoiceSample") ?? ""
         launchAtLogin = SMAppService.mainApp.status == .enabled
     }
 

@@ -1,7 +1,7 @@
 import AVFoundation
 import SwiftUI
 
-/// Settings → Pet voice: engine, voice, pace/pitch/volume, and the KittenTTS install.
+/// Pet & Voice tab: engine, voice, pace/pitch/volume, and the local models' installs.
 struct PetVoiceSettingsSection: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PetVoice.self) private var voice
@@ -13,7 +13,10 @@ struct PetVoiceSettingsSection: View {
         VStack(alignment: .leading, spacing: 8) {
             CapsLabel("Pet voice")
             row("Voice engine") {
-                Picker("Voice engine", selection: $settings.petVoiceEngine) {
+                Picker("Voice engine", selection: Binding(get: { settings.petVoiceEngine }, set: {
+                    settings.petVoiceEngine = $0
+                    voice.engineChanged()
+                })) {
                     ForEach(PetVoice.Engine.allCases) { Text($0.title).tag($0.rawValue) }
                 }
                 .labelsHidden()
@@ -24,6 +27,9 @@ struct PetVoiceSettingsSection: View {
                 switch voice.engine {
                 case .system: systemOptions
                 case .kitten: kittenOptions
+                case .kokoro: kokoroOptions
+                case .voxcpm: voxOptions
+                case .vibevoice: vibeOptions
                 case .off: EmptyView()
                 }
 
@@ -43,10 +49,10 @@ struct PetVoiceSettingsSection: View {
                     }
                     .buttonStyle(PrimaryButtonStyle())
                     .controlSize(.small)
-                    .disabled(voice.engine == .kitten && !kittenUsable)
+                    .disabled(voice.engine.isLocal && !localUsable)
                     if voice.isGenerating {
                         ProgressView().controlSize(.small)
-                        Text(voice.kittenState == .ready ? "Thinking of how to say it…" : "Loading the voice…")
+                        Text(voice.localState == .ready ? "Thinking of how to say it…" : "Loading the voice…")
                             .font(.system(size: 11)).foregroundStyle(Theme.muted)
                     } else if voice.isSpeaking {
                         Button("Stop") { voice.stop() }.controlSize(.small)
@@ -60,7 +66,7 @@ struct PetVoiceSettingsSection: View {
         }
         .onAppear {
             systemVoices = PetVoice.systemVoices()
-            voice.refreshKittenState()
+            voice.refreshLocalState()
         }
     }
 
@@ -92,10 +98,10 @@ struct PetVoiceSettingsSection: View {
         return "\(voice.name) (\(language))\(quality)"
     }
 
-    // MARK: KittenTTS
+    // MARK: Local models
 
-    private var kittenUsable: Bool {
-        switch voice.kittenState {
+    private var localUsable: Bool {
+        switch voice.localState {
         case .installed, .loading, .ready, .failed: return true
         default: return false
         }
@@ -162,6 +168,85 @@ struct PetVoiceSettingsSection: View {
             note("Lines carry tags like [excited], [laugh] and [stress: word]. The bubble hides them, and KittenTTS 2 performs them. See “Try a line” below for what each one does.")
         }
 
+        localCommon
+    }
+
+    @ViewBuilder private var kokoroOptions: some View {
+        @Bindable var settings = settings
+        note("Small and quick: speaks almost instantly, in English. No emotions. It can also copy a voice from a short recording.")
+        row("Voice") {
+            Picker("Voice", selection: Binding(get: { settings.petKokoroVoice }, set: {
+                settings.petKokoroVoice = $0
+                voice.voiceSettingsChanged()
+            })) {
+                Text("Your voice sample").tag("sample")
+                Divider()
+                ForEach(PetVoice.kokoroVoices, id: \.self) { Text(PetVoice.kokoroTitle($0)).tag($0) }
+            }
+            .labelsHidden()
+            .frame(width: 230)
+        }
+        if settings.petKokoroVoice == "sample" { VoiceSampleRow() }
+        localCommon
+    }
+
+    @ViewBuilder private var voxOptions: some View {
+        @Bindable var settings = settings
+        note("Natural, expressive voices in 30 languages. Describe the voice you want, or copy one from a recording. Takes 5–10 seconds per line, so the pet prepares its next lines in the background.")
+        row("Voice") {
+            Picker("Voice", selection: Binding(get: { settings.petVoxUseSample }, set: {
+                settings.petVoxUseSample = $0
+                voice.voiceSettingsChanged()
+            })) {
+                Text("Describe it").tag(false)
+                Text("Your voice sample").tag(true)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 210)
+        }
+        if settings.petVoxUseSample {
+            VoiceSampleRow()
+        } else {
+            FieldBox {
+                TextField("A small, cheerful creature with a bright, warm voice", text: $settings.petVoxDescription, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                    .lineLimit(1...3)
+                    .onSubmit { voice.voiceSettingsChanged() }
+            }
+            note("Who's speaking: age, gender, character, tone. The model invents a voice to match, and it can drift a little between lines. For the same voice every time, use a sample.")
+        }
+        toggle("Act out emotions", isOn: Binding(get: { settings.petVoiceExpressions }, set: {
+            settings.petVoiceExpressions = $0
+            voice.voiceSettingsChanged()
+        }))
+        note("Turns each line's emotion into a direction like “cheerful and happy”. Sounds such as [laugh] are said as words.")
+        localCommon
+    }
+
+    @ViewBuilder private var vibeOptions: some View {
+        @Bindable var settings = settings
+        note("Microsoft's long-form voice model, very natural in English (and Chinese). It copies the voice of a short recording: pick one of Microsoft's demo voices or use your own sample. No emotions. Takes 5–10 seconds per line, so the pet prepares its next lines in the background.")
+        row("Voice") {
+            Picker("Voice", selection: Binding(get: { settings.petVibeVoice }, set: {
+                settings.petVibeVoice = $0
+                voice.voiceSettingsChanged()
+            })) {
+                Text("Your voice sample").tag("sample")
+                Divider()
+                ForEach(PetVoice.vibeVoices, id: \.name) { Text("\($0.name) — \($0.detail)").tag($0.name) }
+            }
+            .labelsHidden()
+            .frame(width: 230)
+        }
+        if settings.petVibeVoice == "sample" { VoiceSampleRow() }
+        localCommon
+    }
+
+    /// Shared by every local model: memory, install status and where things live.
+    @ViewBuilder private var localCommon: some View {
+        @Bindable var settings = settings
         row("Keep the model loaded") {
             Picker("Keep loaded", selection: $settings.petKittenKeepLoadedMinutes) {
                 Text("10 min after speaking").tag(10)
@@ -172,14 +257,31 @@ struct PetVoiceSettingsSection: View {
             .labelsHidden()
             .frame(width: 170)
         }
-        if model.isExpressive {
-            note("Loading takes about 30 seconds, so the first line after an unload is late. While loaded it uses about 6 GB of memory.")
+        if let memory = memoryNote {
+            note(memory)
         }
 
-        kittenStatus
+        localStatus
 
         DisclosureGroup("Advanced") {
             VStack(alignment: .leading, spacing: 6) {
+                if voice.engine == .kitten { kittenPython }
+                if !voice.usesCustomPython, voice.localState != .notInstalled, voice.localState != .installing {
+                    HStack {
+                        note("The environment lives in ~/.moxie-timer/voice/\(voice.engine.environmentName). Models are cached in ~/.cache/huggingface.")
+                        Spacer()
+                        Button("Remove", role: .destructive) { voice.removeInstall() }.controlSize(.small)
+                    }
+                }
+                note(licenseNote)
+            }
+            .padding(.top, 4)
+        }
+        .font(.system(size: 11))
+    }
+
+    @ViewBuilder private var kittenPython: some View {
+        @Bindable var settings = settings
                 row("Python") {
                     FieldBox {
                         TextField("App's own environment", text: Binding(get: { settings.petKittenPython }, set: {
@@ -192,28 +294,49 @@ struct PetVoiceSettingsSection: View {
                     .frame(width: 230)
                 }
                 note("Leave empty to use the environment the app installs. Or point to any Python with `kittenml` and `soundfile` installed.")
-                if settings.petKittenPython.isEmpty, voice.kittenState != .notInstalled, voice.kittenState != .installing {
-                    HStack {
-                        note("The environment lives in ~/.moxie-timer/voice. Models are cached in ~/.cache/huggingface.")
-                        Spacer()
-                        Button("Remove", role: .destructive) { voice.removeInstall() }.controlSize(.small)
-                    }
-                }
-                note("KittenTTS 2 model: Stellon Labs Community License, free for personal and small-business use. The library is Apache 2.0.")
-            }
-            .padding(.top, 4)
-        }
-        .font(.system(size: 11))
     }
 
-    @ViewBuilder private var kittenStatus: some View {
+    private var memoryNote: String? {
+        switch voice.engine {
+        case .kitten where voice.kittenModel.isExpressive:
+            return "Loading takes about 30 seconds, so the first line after an unload is late. While loaded it uses about 6 GB of memory."
+        case .kokoro:
+            return "Loads in a few seconds and uses about 1.5 GB of memory."
+        case .voxcpm:
+            return "Loading takes about 30 seconds (the first time it downloads about 5 GB). While loaded it uses about 5–6 GB of memory."
+        case .vibevoice:
+            return "Loading takes about 30 seconds (the first time it downloads about 5 GB). While loaded it uses about 4–5 GB of memory."
+        default:
+            return nil
+        }
+    }
+
+    private var licenseNote: String {
+        switch voice.engine {
+        case .kokoro: return "Kokoro-82M and the inno-kokoro voice tuner: Apache 2.0 (the tuner's speaker encoder is CC BY-SA 3.0)."
+        case .voxcpm: return "VoxCPM2 by OpenBMB: Apache 2.0."
+        case .vibevoice: return "VibeVoice by Microsoft: MIT, released for research. Microsoft advises against commercial use."
+        default: return "KittenTTS 2 model: Stellon Labs Community License, free for personal and small-business use. The library is Apache 2.0."
+        }
+    }
+
+    private var installNote: String {
+        switch voice.engine {
+        case .kokoro: return "Installs Python packages (PyTorch and Kokoro, about 1 GB) into the app's own folder, then downloads the voice model (about 330 MB)."
+        case .voxcpm: return "Installs Python packages (PyTorch and VoxCPM, about 1 GB) into the app's own folder, then downloads the voice model (about 5 GB)."
+        case .vibevoice: return "Installs Python packages (PyTorch and Transformers, about 1 GB) into the app's own folder, then downloads the voice model (about 5 GB)."
+        default: return "Installs Python packages (PyTorch and KittenTTS, about 1 GB) into the app's own folder, then downloads the voice model."
+        }
+    }
+
+    @ViewBuilder private var localStatus: some View {
         HStack(spacing: 8) {
             Circle().fill(statusColor).frame(width: 7, height: 7)
             Text(statusText).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.ink)
             Spacer()
-            switch voice.kittenState {
+            switch voice.localState {
             case .notInstalled, .unknown:
-                Button("Install KittenTTS") { Task { await voice.install() } }
+                Button("Install \(voice.engine.modelName)") { Task { await voice.install() } }
                     .buttonStyle(PrimaryButtonStyle()).controlSize(.small)
             case .installing:
                 ProgressView().controlSize(.small)
@@ -227,10 +350,10 @@ struct PetVoiceSettingsSection: View {
                     .help("Free the memory now.")
             }
         }
-        if voice.kittenState == .notInstalled || voice.kittenState == .unknown {
-            note("Installs Python packages (PyTorch and KittenTTS, about 1 GB) into the app's own folder, then downloads the voice model. Everything runs on this Mac and nothing is sent anywhere.")
+        if voice.localState == .notInstalled || voice.localState == .unknown {
+            note(installNote + " Everything runs on this Mac and nothing is sent anywhere.")
         }
-        if !voice.installLog.isEmpty, voice.kittenState == .installing || voice.kittenState.isFailure {
+        if !voice.installLog.isEmpty, voice.localState == .installing || voice.localState.isFailure {
             ScrollView {
                 Text(voice.installLog)
                     .font(.system(size: 9, design: .monospaced))
@@ -246,7 +369,7 @@ struct PetVoiceSettingsSection: View {
     }
 
     private var statusText: String {
-        switch voice.kittenState {
+        switch voice.localState {
         case .unknown, .notInstalled: return "Not installed"
         case .installing: return "Installing…"
         case .installed: return "Installed · loads on first line"
@@ -257,7 +380,7 @@ struct PetVoiceSettingsSection: View {
     }
 
     private var statusColor: Color {
-        switch voice.kittenState {
+        switch voice.localState {
         case .ready: return Theme.running
         case .failed: return Theme.onBreak
         case .installed: return Theme.navy
@@ -301,7 +424,54 @@ struct PetVoiceSettingsSection: View {
     }
 }
 
-/// Settings → Pet voice: type a line with voice tags and hear it. Clicking a tag copies it, to paste into your own lines.
+/// The recording Kokoro, VoxCPM2 and VibeVoice copy a voice from. The app keeps its own wav copy of it.
+private struct VoiceSampleRow: View {
+    @Environment(AppSettings.self) private var settings
+    @Environment(PetVoice.self) private var voice
+    @State private var error: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Voice sample").font(.system(size: 12))
+                Spacer()
+                Text(settings.petVoiceSample.isEmpty ? "None" : (settings.petVoiceSample as NSString).lastPathComponent)
+                    .font(.system(size: 11))
+                    .foregroundStyle(settings.petVoiceSample.isEmpty ? Theme.onBreak : Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Button("Choose…", action: choose).controlSize(.small)
+                if !settings.petVoiceSample.isEmpty {
+                    Button("Remove") { voice.removeSample() }.controlSize(.small)
+                }
+            }
+            Text("5–30 seconds of one person speaking clearly, with no music or noise (a Voice Memos recording works). Only use a voice you have permission to copy.")
+                .font(.system(size: 10))
+                .foregroundStyle(Theme.faint)
+                .fixedSize(horizontal: false, vertical: true)
+            if let error {
+                Text(error).font(.system(size: 10)).foregroundStyle(Theme.onBreak)
+            }
+        }
+    }
+
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.audio]
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a short recording of the voice to copy"
+        NSApp.activate(ignoringOtherApps: true)
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try voice.importSample(from: url)
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+}
+
+/// Pet & Voice tab: type a line with voice tags and hear it. Clicking a tag copies it, to paste into your own lines.
 private struct PetLineTester: View {
     @Environment(AppSettings.self) private var settings
     @Environment(PetVoice.self) private var voice
@@ -320,7 +490,7 @@ private struct PetLineTester: View {
                 }
                 Button("Speak", action: speak)
                     .buttonStyle(PrimaryButtonStyle())
-                    .disabled(!PetSpeech.hasWords(text) || (voice.engine == .kitten && voice.kittenState == .installing))
+                    .disabled(!PetSpeech.hasWords(text) || (voice.engine.isLocal && voice.localState == .installing))
             }
             Text("Every tag goes in square brackets. Click one to copy it and add it to the line above.")
                 .font(.system(size: 10))
@@ -336,9 +506,9 @@ private struct PetLineTester: View {
             tagGroup("Stress — one word",
                      "Says that word with more weight. Replace “word” with yours.",
                      ["[stress: word]"])
-            Text(voice.engine == .kitten && voice.understandsExpressions
+            Text(voice.understandsExpressions
                  ? "KittenTTS 2 performs all three."
-                 : "Only KittenTTS 2 with “Act out expressions” performs these fully. Mac voices shift pitch and pace a little for emotions and say sounds as words (“ha ha”, “hmm”); stress is ignored.")
+                 : "Only KittenTTS 2 with “Act out expressions” performs these fully. VoxCPM2 acts out emotions as a style direction. The other voices say sounds as words (“ha ha”, “hmm”) and ignore stress; Mac voices also shift pitch and pace a little for emotions.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -393,6 +563,6 @@ private struct PetLineTester: View {
     }
 }
 
-extension PetVoice.KittenState {
+extension PetVoice.LocalState {
     var isFailure: Bool { if case .failed = self { return true } else { return false } }
 }

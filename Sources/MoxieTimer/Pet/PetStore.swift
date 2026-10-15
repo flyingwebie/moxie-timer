@@ -440,7 +440,7 @@ final class PetStore {
         }
         let tone = PetTone(rawValue: settings.petTone) ?? .warm
         let resolved = tone == .mix ? [PetTone.warm, .coach, .quiet].randomElement()! : tone
-        // AI-written lines (Settings → Your pet) replace the built-in ones where they exist.
+        // AI-written lines (Pet & Voice tab) replace the built-in ones where they exist.
         return library.lines(for: event, tone: resolved)?.randomElement() ?? PetPhrases.line(for: event, tone: resolved)
     }
 
@@ -545,7 +545,7 @@ final class PetStore {
             preparedSignature = signature
         }
         guard prepareTask == nil, now.timeIntervalSince(lastPrepareAt) >= 20, !isInCall() else { return }
-        let slowVoice = voice.engine == .kitten && voice.kittenState == .ready
+        let slowVoice = voice.preparesAhead
         let anyAI = Self.preparedEvents.contains(where: usesAI)
         guard slowVoice || anyAI, settings.petTone != PetTone.quiet.rawValue else { return }
         lastPrepareAt = now
@@ -565,7 +565,7 @@ final class PetStore {
                     upNext[event] = template
                 }
                 // {app} is only known at the moment itself, so those lines are voiced live.
-                if let template = upNext[event], !template.contains("{app}"), voice.engine == .kitten, voice.kittenState == .ready {
+                if let template = upNext[event], !template.contains("{app}"), voice.preparesAhead {
                     await voice.prepare(fill(template, for: event))
                 }
             }

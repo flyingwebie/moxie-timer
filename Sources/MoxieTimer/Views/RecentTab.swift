@@ -5,6 +5,8 @@ struct RecentTab: View {
     @Environment(TimerStore.self) private var timer
     @Environment(Clock.self) private var clock
     @Environment(WidgetUI.self) private var ui
+    /// The entry opened to show its details.
+    @State private var openEntry: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -43,7 +45,9 @@ struct RecentTab: View {
                         ForEach(history.groupedByDay) { group in
                             Section {
                                 ForEach(group.entries) { entry in
-                                    EntryRow(entry: entry, canStart: timer.session == nil) {
+                                    EntryRow(entry: entry, canStart: timer.session == nil, isOpen: openEntry == entry.id, onToggle: {
+                                        withAnimation(.easeOut(duration: 0.15)) { openEntry = openEntry == entry.id ? nil : entry.id }
+                                    }, onReview: { ui.route = .review }) {
                                         timer.startAgain(from: entry)
                                         ui.tab = .timer
                                     } onRemove: {
@@ -68,10 +72,10 @@ struct RecentTab: View {
                         }
                     }
                 }
-                .frame(height: 300)
+                .frame(height: 340)
             }
 
-            Text("Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
+            Text("Click an entry for its details. Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -94,6 +98,9 @@ struct RecentTab: View {
 private struct EntryRow: View {
     let entry: LoggedEntry
     let canStart: Bool
+    let isOpen: Bool
+    let onToggle: () -> Void
+    let onReview: () -> Void
     let onStart: () -> Void
     let onRemove: () -> Void
     var onEdit: (() -> Void)? = nil
@@ -101,6 +108,22 @@ private struct EntryRow: View {
     @State private var hovering = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            summary
+            if isOpen { details }
+        }
+        .background(RoundedRectangle(cornerRadius: 10).fill(isOpen ? Theme.cream : .clear).padding(.horizontal, -6))
+        .contextMenu {
+            Button("Start timer for this", action: onStart).disabled(!canStart)
+            if entry.isPending, let onEdit {
+                Button("Edit held entry…", action: onEdit)
+            }
+            Divider()
+            Button("Remove from this list", role: .destructive, action: onRemove)
+        }
+    }
+
+    private var summary: some View {
         HStack(alignment: .top, spacing: 10) {
             ClientAvatar(name: entry.draft.client?.name ?? "?", size: 30)
             VStack(alignment: .leading, spacing: 2) {
@@ -111,10 +134,10 @@ private struct EntryRow: View {
                 Text(detail)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.ink.opacity(0.7))
-                    .lineLimit(2)
+                    .lineLimit(isOpen ? nil : 2)
             }
             Spacer(minLength: 6)
-            if hovering && canStart {
+            if hovering && canStart && !isOpen {
                 Button(action: onStart) {
                     Image(systemName: "play.fill")
                         .font(.system(size: 10, weight: .bold))
@@ -147,15 +170,76 @@ private struct EntryRow: View {
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
-        .help("\(entry.start.formatted(date: .omitted, time: .shortened)) – \(entry.end.formatted(date: .omitted, time: .shortened))")
-        .contextMenu {
-            Button("Start timer for this", action: onStart).disabled(!canStart)
-            if entry.isPending, let onEdit {
-                Button("Edit held entry…", action: onEdit)
+        .onTapGesture(perform: onToggle)
+        .help(isOpen ? "Click to close" : "Click for details")
+    }
+
+    /// Everything stored about the entry, with its actions.
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            field("When", "\(entry.start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day())) · \(entry.start.formatted(date: .omitted, time: .shortened)) – \(entry.end.formatted(date: .omitted, time: .shortened)) (\(DurationFormat.short(entry.duration)))")
+            field("Client", entry.draft.client?.name ?? "None yet")
+            if let project = entry.draft.project { field("Project", project.name) }
+            if let task = entry.draft.task { field("Task", task.name) }
+            if let ticket = entry.draft.ticket { field("Ticket", ticket.name) }
+            let notes = entry.draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+            field("Notes", notes.isEmpty ? "—" : notes)
+            field("Billable", billableText)
+            field("Status", statusText, color: entry.isPending || entry.sendError != nil ? Theme.onBreak : Theme.running)
+            if let moxieId = entry.moxieId { field("Moxie ID", moxieId) }
+
+            HStack(spacing: 6) {
+                Button("Start timer", action: onStart).buttonStyle(ChipButtonStyle()).disabled(!canStart)
+                if entry.isPending {
+                    if let onEdit { Button("Edit", action: onEdit).buttonStyle(ChipButtonStyle()) }
+                    Button("Review & send", action: onReview).buttonStyle(ChipButtonStyle())
+                }
+                if !notes.isEmpty {
+                    Button("Copy notes") {
+                        NSPasteboard.general.clearContents()
+                        NSPasteboard.general.setString(notes, forType: .string)
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                }
+                Spacer()
+                Button(role: .destructive, action: onRemove) { Image(systemName: "trash") }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Theme.danger)
+                    .help("Remove from this list (doesn't delete it in Moxie)")
             }
-            Divider()
-            Button("Remove from this list", role: .destructive, action: onRemove)
+            .controlSize(.small)
+            .padding(.top, 4)
         }
+        .padding(.leading, 40)
+        .padding(.bottom, 10)
+    }
+
+    private func field(_ label: String, _ value: String, color: Color = Theme.ink) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(label.uppercased())
+                .font(.system(size: 9, weight: .bold))
+                .tracking(0.4)
+                .foregroundStyle(Theme.muted)
+                .frame(width: 62, alignment: .leading)
+            Text(value)
+                .font(.system(size: 12))
+                .foregroundStyle(color)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var billableText: String {
+        if let stored = entry.moxieBillable, stored != entry.draft.isBillable {
+            return stored ? "Yes (Moxie made it billable)" : "No (asked for billable, Moxie stored non-billable)"
+        }
+        return entry.isBillable ? "Yes" : "No"
+    }
+
+    private var statusText: String {
+        if let error = entry.sendError { return "Not sent: \(error)" }
+        if entry.isPending { return "Held on this Mac for review" }
+        return "Sent to Moxie"
     }
 
     private var detail: String {
