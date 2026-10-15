@@ -178,6 +178,11 @@ final class PetVoice {
     /// Whether lines should be voiced ahead of time: the local model is loaded and slow enough to need it.
     var preparesAhead: Bool { engine.isSlow && localState == .ready }
 
+    /// The voice worker's process, while it runs (for showing its memory).
+    var runningWorkerPID: Int32? { worker.flatMap { $0.isRunning ? $0.pid : nil } }
+
+    func clearInstallLog() { installLog = "" }
+
     /// The engine picker changed: the running worker belongs to the old engine's Python.
     func engineChanged() {
         stop()
@@ -384,7 +389,7 @@ final class PetVoice {
             return kittenModel.isExpressive && settings.petVoiceExpressions ? spoken : PetSpeech.display(spoken)
         case .voxcpm:
             // Voice design and mood go in one direction in parentheses, e.g. "(A warm voice, cheerful and happy)Hi!".
-            let plain = PetSpeech.plainSegments(spoken).joined(separator: " … ")
+            let plain = PetSpeech.display(spoken)
             var directions: [String] = []
             if !settings.petVoxUseSample {
                 let description = settings.petVoxDescription.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -393,7 +398,29 @@ final class PetVoice {
             if settings.petVoiceExpressions, let style = Self.voxStyle(for: PetSpeech.emotion(of: spoken)) { directions.append(style) }
             return directions.isEmpty ? plain : "(\(directions.joined(separator: ", ")))\(plain)"
         default:
-            return PetSpeech.plainSegments(spoken).joined(separator: " … ")
+            // Sounds are dropped, not said as words: models read "ha ha!" as a stop-start exclamation.
+            return PetSpeech.display(spoken)
+        }
+    }
+
+    /// How the current voice handles each kind of tag; nil = the tag is removed before speaking.
+    struct TagSupport {
+        var emotions: String?
+        var sounds: String?
+        var stress: String?
+        var any: Bool { emotions != nil || sounds != nil || stress != nil }
+    }
+
+    var tagSupport: TagSupport {
+        switch engine {
+        case .kitten where understandsExpressions:
+            return TagSupport(emotions: "KittenTTS 2 performs it.", sounds: "KittenTTS 2 performs it.", stress: "KittenTTS 2 performs it.")
+        case .voxcpm where settings.petVoiceExpressions:
+            return TagSupport(emotions: "VoxCPM2 turns it into a style direction, like “cheerful and happy”.")
+        case .system:
+            return TagSupport(emotions: "Mac voices shift pitch and pace a little.", sounds: "Mac voices say it as a word (“ha ha”, “hmm”).")
+        default:
+            return TagSupport()
         }
     }
 
@@ -445,7 +472,8 @@ final class PetVoice {
             if !model.isExpressive { request["speed"] = settings.petVoiceSpeed }
         case .kokoro:
             request["voice"] = Self.kokoroVoices.contains(settings.petKokoroVoice) ? settings.petKokoroVoice : "af_heart"
-            request["speed"] = settings.petVoiceSpeed
+            // Kokoro's own pace is brisk; 0.9 is a calmer "normal" for the pet.
+            request["speed"] = settings.petVoiceSpeed * Self.kokoroPace
         case .vibevoice:
             request["voice"] = (Self.vibeVoices.first { $0.name == settings.petVibeVoice } ?? Self.vibeVoices[0]).file
         default: break
@@ -532,14 +560,36 @@ final class PetVoice {
         if !engine.isRunning { try engine.start() }
         isSpeaking = true
         let mine = generation
-        player.scheduleFile(file, at: nil) { [weak self] in
+        // Silence around the line: the output needs a moment to wake up, and the pitch unit and the device still hold
+        // the last part of the line when the player has handed it over, so pausing at once cut the ending off.
+        player.scheduleBuffer(Self.silence(Self.leadIn, format: file.processingFormat))
+        player.scheduleFile(file, at: nil)
+        player.scheduleBuffer(Self.silence(Self.tail, format: file.processingFormat), at: nil, options: [],
+                              completionCallbackType: .dataPlayedBack) { [weak self] _ in
             Task { @MainActor in
                 guard let self, mine == self.generation else { return }
                 self.isSpeaking = false
+                // Pause a little later, so a line that follows right away doesn't restart the output.
+                try? await Task.sleep(for: .seconds(1))
+                guard mine == self.generation, !self.isSpeaking else { return }
                 self.audioEngine?.pause()
             }
         }
         player.play()
+    }
+
+    private static let kokoroPace = 0.9
+    private static let leadIn = 0.2
+    private static let tail = 0.4
+
+    private static func silence(_ seconds: Double, format: AVAudioFormat) -> AVAudioPCMBuffer {
+        let frames = AVAudioFrameCount(seconds * format.sampleRate)
+        let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frames)!
+        buffer.frameLength = frames
+        for audio in UnsafeMutableAudioBufferListPointer(buffer.mutableAudioBufferList) {
+            if let data = audio.mData { memset(data, 0, Int(audio.mDataByteSize)) }
+        }
+        return buffer
     }
 
     private func startWorker() async throws -> Worker {
@@ -725,14 +775,6 @@ final class PetVoice {
         }
     }
 
-    /// Deletes the current engine's environment (downloaded models stay in the Hugging Face cache).
-    func removeInstall() {
-        unload()
-        try? FileManager.default.removeItem(at: managedEnvironment)
-        installLog = ""
-        refreshLocalState()
-    }
-
     private func log(_ line: String) {
         installLog = String((installLog + line + "\n").suffix(4000))
     }
@@ -818,6 +860,7 @@ private final class Worker: @unchecked Sendable {
     private var pending: [Int: CheckedContinuation<[String: Any], Error>] = [:]
 
     var isRunning: Bool { process.isRunning }
+    var pid: Int32 { process.processIdentifier }
 
     init(python: String, script: URL, onExit: @escaping @Sendable () -> Void) throws {
         process.executableURL = URL(fileURLWithPath: python)

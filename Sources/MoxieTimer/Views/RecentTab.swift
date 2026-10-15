@@ -192,7 +192,7 @@ private struct EntryRow: View {
                 Button("Start timer", action: onStart).buttonStyle(ChipButtonStyle()).disabled(!canStart)
                 if entry.isPending {
                     if let onEdit { Button("Edit", action: onEdit).buttonStyle(ChipButtonStyle()) }
-                    Button("Review & send", action: onReview).buttonStyle(ChipButtonStyle())
+                    Button("Review", action: onReview).buttonStyle(ChipButtonStyle())
                 }
                 if !notes.isEmpty {
                     Button("Copy notes") {
