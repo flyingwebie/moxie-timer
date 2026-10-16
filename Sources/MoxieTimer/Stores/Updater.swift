@@ -154,9 +154,11 @@ final class Updater {
                   bundle.bundleIdentifier == Bundle.main.bundleIdentifier else {
                 throw UpdateError("The download doesn't contain Moxie Timer.")
             }
-            // Once this app is signed with a real certificate, only accept updates signed by the same one.
+            // Once this app is signed with a real certificate, only accept updates signed by the same one
+            // or by Moxie Timer's Developer ID team.
             if let current = Self.signingCertificate(of: Bundle.main.bundleURL) {
-                guard Self.hasValidSignature(newApp), Self.signingCertificate(of: newApp) == current else {
+                guard Self.hasValidSignature(newApp),
+                      Self.signingCertificate(of: newApp) == current || Self.isSignedByDeveloperTeam(newApp) else {
                     throw UpdateError("The update isn't signed with Moxie Timer's certificate, so it wasn't installed.")
                 }
             }
@@ -202,6 +204,21 @@ final class Updater {
         var code: SecStaticCode?
         guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code else { return false }
         return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), nil) == errSecSuccess
+    }
+
+    /// Apple Developer team that signs and notarizes releases.
+    static let developerTeamID = "787XM95RYN"
+
+    /// Signed with a genuine Apple-issued Developer ID Application certificate from `developerTeamID`.
+    static func isSignedByDeveloperTeam(_ url: URL) -> Bool {
+        let rule = "anchor apple generic and certificate 1[field.1.2.840.113635.100.6.2.6] exists"
+            + " and certificate leaf[field.1.2.840.113635.100.6.1.13] exists"
+            + " and certificate leaf[subject.OU] = \"\(developerTeamID)\""
+        var code: SecStaticCode?
+        var requirement: SecRequirement?
+        guard SecStaticCodeCreateWithPath(url as CFURL, [], &code) == errSecSuccess, let code,
+              SecRequirementCreateWithString(rule as CFString, [], &requirement) == errSecSuccess else { return false }
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), requirement) == errSecSuccess
     }
 
     static func isVersion(_ candidate: String, newerThan current: String) -> Bool {
