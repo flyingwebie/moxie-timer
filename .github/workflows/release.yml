@@ -8,6 +8,10 @@ on:
       version:
         description: "Version to release (e.g. 1.0.1) — creates tag v<version>"
         required: true
+      self_signed:
+        description: "Sign with the legacy self-signed certificate (bridge release for installs older than 2.13.0)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -36,15 +40,22 @@ jobs:
           echo "Using $XCODE"
           sudo xcode-select -s "$XCODE"
 
-      # A stable self-signed certificate keeps the app's code identity the same across releases, so macOS
-      # remembers Keychain and Accessibility permissions after updates.
+      # Releases are signed with the Developer ID certificate and notarized, so Gatekeeper opens them without
+      # warnings and macOS keeps Keychain/Accessibility permissions across updates. Without those secrets it
+      # falls back to the older self-signed certificate, then to ad-hoc signing.
       - name: Import signing certificate
         id: signing
         env:
+          DEVELOPER_ID_P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          DEVELOPER_ID_P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
           P12_BASE64: ${{ secrets.SIGNING_P12_BASE64 }}
           P12_PASSWORD: ${{ secrets.SIGNING_P12_PASSWORD }}
         run: |
-          if [[ -z "$P12_BASE64" ]]; then
+          if [[ -n "$DEVELOPER_ID_P12_BASE64" && "${{ github.event.inputs.self_signed }}" != "true" ]]; then
+            P12_BASE64="$DEVELOPER_ID_P12_BASE64"
+            P12_PASSWORD="$DEVELOPER_ID_P12_PASSWORD"
+            DEVELOPER_ID=1
+          elif [[ -z "$P12_BASE64" ]]; then
             echo "No signing certificate configured; the app will be ad-hoc signed."
             exit 0
           fi
@@ -57,13 +68,19 @@ jobs:
           security import "$RUNNER_TEMP/sign.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
           security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
-          security find-certificate -c "Moxie Timer Self-Signed" -p "$KEYCHAIN" > "$RUNNER_TEMP/cert.pem"
-          # codesign only uses trusted identities; trust this certificate for code signing on the runner.
-          sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
-          SHA1="$(security find-certificate -c "Moxie Timer Self-Signed" -Z "$KEYCHAIN" | awk '/SHA-1 hash:/ {print $3}')"
-          security find-identity -p codesigning "$KEYCHAIN"
           rm -f "$RUNNER_TEMP/sign.p12"
-          echo "identity=$SHA1" >> "$GITHUB_OUTPUT"
+          if [[ "${DEVELOPER_ID:-}" == 1 ]]; then
+            IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | sed -n 's/.*"\(Developer ID Application: .*\)"/\1/p' | head -1)"
+            [[ -n "$IDENTITY" ]] || { echo "The Developer ID p12 has no usable identity."; exit 1; }
+            echo "developer_id=true" >> "$GITHUB_OUTPUT"
+          else
+            security find-certificate -c "Moxie Timer Self-Signed" -p "$KEYCHAIN" > "$RUNNER_TEMP/cert.pem"
+            # codesign only uses trusted identities; trust this certificate for code signing on the runner.
+            sudo security add-trusted-cert -d -r trustRoot -p codeSign -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+            IDENTITY="$(security find-certificate -c "Moxie Timer Self-Signed" -Z "$KEYCHAIN" | awk '/SHA-1 hash:/ {print $3}')"
+          fi
+          security find-identity -p codesigning "$KEYCHAIN"
+          echo "identity=$IDENTITY" >> "$GITHUB_OUTPUT"
           echo "keychain=$KEYCHAIN" >> "$GITHUB_OUTPUT"
 
       - name: Build universal app
@@ -72,7 +89,15 @@ jobs:
           BUILD_NUMBER: ${{ github.run_number }}
           SIGN_IDENTITY: ${{ steps.signing.outputs.identity }}
           SIGN_KEYCHAIN: ${{ steps.signing.outputs.keychain }}
-        run: ./scripts/build-app.sh --universal
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [[ -n "$SIGN_IDENTITY" ]]; then
+            ./scripts/build-app.sh --universal ${{ steps.signing.outputs.developer_id == 'true' && '--notarize' || '' }}
+          else
+            ./scripts/build-app.sh --universal --adhoc
+          fi
 
       - name: Package
         id: package
@@ -85,7 +110,13 @@ jobs:
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          DEVELOPER_ID: ${{ steps.signing.outputs.developer_id }}
         run: |
+          if [[ "$DEVELOPER_ID" == "true" ]]; then
+            INSTALL_NOTE="Open it. The app is signed with an Apple Developer ID and notarized by Apple, so macOS opens it without warnings."
+          else
+            INSTALL_NOTE="The app isn't notarized. On first launch, right-click it → **Open**, or run \`xattr -dr com.apple.quarantine /Applications/MoxieTimer.app\`"
+          fi
           TAG="${{ steps.version.outputs.tag }}"
           ZIP="${{ steps.package.outputs.zip }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
@@ -95,12 +126,11 @@ jobs:
               --target "${{ github.sha }}" \
               --title "Moxie Timer $TAG" \
               --generate-notes \
-              --notes "$(cat <<'EOF'
+              --notes "$(sed "s|INSTALL_NOTE|$INSTALL_NOTE|" <<'EOF'
           ## Install
 
           1. Download `MoxieTimer-*.zip`, unzip it and move **MoxieTimer.app** to /Applications.
-          2. The app is ad-hoc signed (not notarized). On first launch, right-click it → **Open**, or run:
-             `xattr -dr com.apple.quarantine /Applications/MoxieTimer.app`
+          2. INSTALL_NOTE
           3. Open Settings in the widget and paste your Moxie API key and workspace base URL (Moxie → Custom API → Enable).
 
           Universal build: Apple Silicon + Intel, macOS 14 or later.

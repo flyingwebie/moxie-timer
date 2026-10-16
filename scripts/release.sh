@@ -1,13 +1,16 @@
 #!/bin/bash
-# Publishes a release: ./scripts/release.sh 1.2.0
+# Publishes a release: ./scripts/release.sh 1.2.0 [--self-signed]
+# --self-signed signs with the legacy self-signed certificate instead of Developer ID (bridge release only).
 # Runs the Release workflow on GitHub, which builds the app, creates tag v<version> and the release.
 # Installed apps pick it up through their built-in updater.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION="${1:-}"
+SELF_SIGNED=false
+[[ "${2:-}" == "--self-signed" ]] && SELF_SIGNED=true
 if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-  echo "usage: $0 <major.minor.patch>" >&2
+  echo "usage: $0 <major.minor.patch> [--self-signed]" >&2
   exit 1
 fi
 if gh release view "v$VERSION" >/dev/null 2>&1; then
@@ -24,7 +27,7 @@ if [[ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]]; then
   exit 1
 fi
 
-gh workflow run release.yml --ref main -f version="$VERSION"
+gh workflow run release.yml --ref main -f version="$VERSION" -f self_signed="$SELF_SIGNED"
 echo "Waiting for the workflow to start…"
 until RUN_ID=$(gh run list --workflow release.yml --event workflow_dispatch --limit 1 \
   --json databaseId,status -q '.[] | select(.status != "completed") | .databaseId') && [[ -n "$RUN_ID" ]]; do

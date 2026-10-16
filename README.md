@@ -128,8 +128,8 @@ the mic is in use and by which app, never audio. Always-on recorders and dictati
 ## Download
 
 Grab the latest `MoxieTimer-x.y.z.zip` from [Releases](https://github.com/flyingwebie/moxie-timer/releases/latest),
-unzip, and move it to /Applications. The app isn't notarized: right-click → **Open** the first time, or run
-`xattr -dr com.apple.quarantine /Applications/MoxieTimer.app`.
+unzip, and move it to /Applications. It's signed with an Apple Developer ID and notarized by Apple, so it opens
+without Gatekeeper warnings.
 
 It updates itself from GitHub Releases: a banner offers **Install & relaunch**, and a running timer carries over.
 
@@ -150,10 +150,13 @@ Requires macOS 14+ and Xcode 16+ (Swift 5.10+). Build with Xcode 26+ to include 
 ```sh
 ./scripts/build-app.sh            # → build/MoxieTimer.app
 ./scripts/build-app.sh --install  # copies to /Applications and launches
+./scripts/build-app.sh --notarize # also notarizes and staples (needs NOTARY_PROFILE)
 ```
 
 Add `--universal` for an Apple Silicon + Intel binary. For development you can also `open Package.swift` in Xcode and
-run the `MoxieTimer` scheme. Local builds are ad-hoc signed, so macOS may ask again for Keychain access after a rebuild.
+run the `MoxieTimer` scheme. Local builds are signed with the first "Developer ID Application" certificate in your
+keychain (ad-hoc when there's none, or with `--adhoc`), so permissions survive rebuilds. To notarize locally, save your
+credentials once with `xcrun notarytool store-credentials moxie-notary` and pass `NOTARY_PROFILE=moxie-notary`.
 
 </details>
 
@@ -181,9 +184,9 @@ task fields but isn't fully documented, so the app checks Moxie's reply and tell
 <details>
 <summary><b>Signing, local data and updates</b></summary>
 
-Releases are signed with a stable self-signed certificate (kept as an encrypted GitHub secret), so macOS keeps the
-app's Keychain and Accessibility permissions across updates, and the updater only installs updates signed with that
-same certificate. The app is not notarized.
+Releases are signed with a Developer ID certificate and notarized by Apple (the certificate and notary credentials are
+encrypted GitHub secrets), so macOS keeps the app's Keychain and Accessibility permissions across updates. The updater
+only installs updates signed by the same certificate or by the project's Developer ID team.
 
 Local entries (`~/Library/Application Support/MoxieTimer/history.json`) are backed up once a day, keeping 14 days;
 restore from Settings → Local data. Restoring merges missing entries back without overwriting newer ones. AI-written
