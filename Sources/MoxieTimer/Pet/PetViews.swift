@@ -183,6 +183,7 @@ struct PetCard: View {
 struct PetSettingsSection: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AIService.self) private var ai
+    @Environment(PetSkillStore.self) private var skills
 
     var body: some View {
         @Bindable var settings = settings
@@ -201,13 +202,26 @@ struct PetSettingsSection: View {
                     .frame(width: 150)
             }
             HStack {
-                Text("Tone").font(.system(size: 12))
+                Text("Persona").font(.system(size: 12))
                 Spacer()
-                Picker("Tone", selection: $settings.petTone) {
-                    ForEach(PetTone.allCases) { tone in Text(tone.title).tag(tone.rawValue) }
+                Picker("Persona", selection: $settings.petPersona) {
+                    ForEach(skills.personas) { persona in Text(persona.name).tag(persona.id) }
+                    Divider()
+                    Text("Quiet (emoji only)").tag(PetSkillStore.quietID)
                 }
                 .labelsHidden()
                 .frame(width: 150)
+                .disabled(settings.petPersonaRotate)
+            }
+            Toggle("Surprise me: a different persona each day", isOn: $settings.petPersonaRotate)
+                .toggleStyle(.switch).tint(Theme.navy).controlSize(.small).font(.system(size: 12))
+            HStack(spacing: 8) {
+                Text(skillsSummary)
+                    .font(.system(size: 10))
+                    .foregroundStyle(Theme.faint)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer()
+                Button("Manage skills…") { PetSkillsWindow.shared.show() }.controlSize(.small)
             }
 
             HStack {
@@ -240,23 +254,12 @@ struct PetSettingsSection: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            editor("Talk to me like…", text: $settings.petStyle,
-                   placeholder: "e.g. Call me Davide, speak Italian, football metaphors, a bit sarcastic")
-            editor("Your praise lines (one per line)", text: $settings.petPraiseLines,
-                   placeholder: "Grande Davide! 🔥\nAnother one bites the dust")
-            editor("Your get-back-on-track lines (one per line)", text: $settings.petDriftLines,
-                   placeholder: "{app} again? {task} is waiting.\nPhone down, Davide.")
-            Text("Use {task}, {app}, {name}, {level} or {streak} in your lines. Add voice tags in square brackets, like “[joyful] Well done! [laugh] That's [stress: huge].” Copy tags and try lines in Pet voice → Try a line.")
-                .font(.system(size: 10))
-                .foregroundStyle(Theme.faint)
-                .fixedSize(horizontal: false, vertical: true)
-
-            Toggle("Let AI write lines in my style", isOn: $settings.petUseAI)
+            Toggle("Let AI write fresh lines for my skills", isOn: $settings.petUseAI)
                 .toggleStyle(.switch).tint(Theme.navy).controlSize(.small).font(.system(size: 12))
                 .disabled(!ai.hasEnabledEngine)
             Text(settings.petUseAI
-                 ? "Uses the AI engines below (at most once a minute). A built-in line shows first and is replaced when the AI answers."
-                 : "Built-in and your own lines are used. Turn on AI to follow your style even more closely, in any language.")
+                 ? "Lines for your persona and situation rules are rewritten once a day. Big moments also get a line written on the spot (at most once a minute), using the time, your progress today and what the pet said recently."
+                 : "Your skills' example lines and the built-in lines are used. Turn on AI for fresh lines every day, in any language.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
@@ -273,17 +276,10 @@ struct PetSettingsSection: View {
             : "\(when) like this: “\(PetSpeech.display(sample))” The call keeps the line's emotion."
     }
 
-    private func editor(_ title: String, text: Binding<String>, placeholder: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)
-            TextField(placeholder, text: text, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 12))
-                .lineLimit(2...5)
-                .padding(8)
-                .background(RoundedRectangle(cornerRadius: 8).fill(Theme.cream))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.border))
-        }
+    private var skillsSummary: String {
+        let rules = skills.situations.filter(\.enabled).count
+        let persona = settings.petPersonaRotate ? "Today: \(skills.persona()?.name ?? "Quiet")" : "\(skills.personas.count) personas"
+        return "\(persona) · \(rules) situation rule\(rules == 1 ? "" : "s") on. Skills change what the pet says and when."
     }
 }
 
@@ -341,74 +337,82 @@ struct SpeciesPicker: View {
     }
 }
 
-/// Pet & Voice tab: have AI write the pet's whole set of lines in the user's tone and style.
+/// Pet & Voice tab: status and controls for the AI-written lines of the pet's skills.
 struct PetLinesWriter: View {
     @Environment(AppSettings.self) private var settings
     @Environment(AIService.self) private var ai
     @Environment(PetLineLibrary.self) private var library
+    @Environment(PetSkillStore.self) private var skills
 
     var body: some View {
+        @Bindable var settings = settings
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Built-in lines").font(.system(size: 12))
+                    Text("AI-written lines").font(.system(size: 12))
                     Text(status).font(.system(size: 10)).foregroundStyle(Theme.faint)
                 }
                 Spacer()
                 if library.isWriting {
                     ProgressView().controlSize(.small)
                 } else {
-                    if library.saved != nil {
-                        Button("Use the originals") { library.reset() }.controlSize(.small)
+                    if library.totalLines > 0 {
+                        Button("Forget") { library.reset() }.controlSize(.small)
+                            .help("Use the skills' example lines and the built-in lines until the next rewrite.")
                     }
-                    Button(library.saved == nil ? "Write new lines with AI" : "Rewrite") { Task { await library.write() } }
+                    Button("Rewrite now") { Task { await library.write() } }
                         .buttonStyle(PrimaryButtonStyle())
                         .controlSize(.small)
-                        .disabled(!ai.hasEnabledEngine || library.tonesToWrite.isEmpty)
+                        .disabled(!library.canWrite)
                 }
+            }
+            HStack {
+                Text("Write with").font(.system(size: 12))
+                Spacer()
+                Picker("Write with", selection: $settings.petWriterEngine) {
+                    Text("Engine order below").tag("")
+                    ForEach(AIEngine.allCases) { engine in Text(engine.title).tag(engine.rawValue) }
+                }
+                .labelsHidden()
+                .frame(width: 170)
             }
             if let progress = library.progress {
                 note(progress + " This can take a minute.")
-            } else if !ai.hasEnabledEngine {
-                note("Turn on an AI engine below to write new lines.")
-            } else if library.tonesToWrite.isEmpty {
-                note("The Quiet tone only uses emoji, so there's nothing to write.")
+            } else if !settings.petUseAI {
+                note("Turn on “Let AI write fresh lines” above to rewrite lines every day.")
+            } else if skills.isQuiet && !settings.petPersonaRotate {
+                note("Quiet only uses emoji, so there's nothing to write.")
             } else {
-                note("Writes \(PetLineLibrary.linesPerMoment) fresh lines for every moment (finishing, drifting, breaks…) in your tone and “Talk to me like…”, with voice expressions. They're saved on this Mac and replace the originals, so lines stay instant. Claude, Codex, Gemini or a good Ollama model write much better lines than Apple's on-device model.")
+                note("Every day: \(PetLineLibrary.personaLines) lines per moment for your persona and \(PetLineLibrary.ruleLines) per moment for each situation rule. The engine picked here is tried first, then the engines below. Claude, Codex, Gemini or a good Ollama model write livelier lines than Apple's on-device model.")
             }
             if let error = library.lastError {
                 Text(error).font(.system(size: 10)).foregroundStyle(Theme.onBreak).fixedSize(horizontal: false, vertical: true)
             }
-            if library.saved != nil {
-                DisclosureGroup("See the lines") { lineList.padding(.top, 4) }
+            if let persona = skills.persona(), library.entry(for: persona) != nil {
+                DisclosureGroup("See today's \(persona.name) lines") { lineList(persona).padding(.top, 4) }
                     .font(.system(size: 11))
             }
         }
     }
 
     private var status: String {
-        guard let saved = library.saved else { return "The originals that come with the app." }
-        let tones = PetLineLibrary.writableTones.filter { library.count(for: $0) > 0 }
-            .map { "\($0.title): \(library.count(for: $0))" }.joined(separator: ", ")
-        let date = saved.createdAt.formatted(date: .abbreviated, time: .shortened)
-        return "AI-written \(date)\(saved.engine.map { " by \($0)" } ?? "") · \(tones)"
+        guard let last = library.lastWritten else { return "None yet. The skills' examples and built-in lines are used." }
+        let date = last.writtenAt.formatted(date: .abbreviated, time: .shortened)
+        return "\(library.totalLines) lines · last written \(date)\(last.engine.map { " by \($0)" } ?? "")"
     }
 
-    private var lineList: some View {
+    private func lineList(_ persona: PetSkill) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(PetLineLibrary.writableTones.filter { library.count(for: $0) > 0 }) { tone in
-                Text(tone.title).font(.system(size: 11, weight: .bold)).foregroundStyle(Theme.ink)
-                ForEach(PetEvent.allCases, id: \.self) { event in
-                    if let lines = library.lines(for: event, tone: tone) {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(event.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
-                            ForEach(lines, id: \.self) { line in
-                                Text("• " + PetSpeech.display(line))
-                                    .font(.system(size: 11))
-                                    .foregroundStyle(Theme.ink)
-                                    .help(line)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
+            ForEach(PetEvent.allCases, id: \.self) { event in
+                if let lines = library.lines(for: event, persona: persona) {
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(event.title).font(.system(size: 10, weight: .semibold)).foregroundStyle(Theme.muted)
+                        ForEach(lines, id: \.self) { line in
+                            Text("• " + PetSpeech.display(line))
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.ink)
+                                .help(line)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                 }

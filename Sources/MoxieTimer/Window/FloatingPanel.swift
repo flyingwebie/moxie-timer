@@ -64,6 +64,7 @@ final class PanelController {
             .environment(model.pet)
             .environment(model.voice)
             .environment(model.petLines)
+            .environment(model.petSkills)
             .environment(model.calls)
 
         let host = NSHostingView(rootView: root)

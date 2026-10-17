@@ -68,6 +68,7 @@ final class AppModel {
     let updater = Updater()
     let ai = AIService()
     let voice: PetVoice
+    let petSkills: PetSkillStore
     let petLines: PetLineLibrary
     let inbox: TaskInbox
     let focus: FocusStore
@@ -86,14 +87,17 @@ final class AppModel {
         idle = IdleMonitor(timer: timer, focus: focus)
         activity = ActivityWatcher(settings: settings, timer: timer, focus: focus, history: history, stats: stats)
         voice = PetVoice(settings: settings, ai: ai)
-        petLines = PetLineLibrary(settings: settings, ai: ai)
+        petSkills = PetSkillStore(settings: settings)
+        petLines = PetLineLibrary(settings: settings, ai: ai, skills: petSkills)
         pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai,
-                       voice: voice, library: petLines)
+                       voice: voice, library: petLines, skills: petSkills)
         calls = CallDetector(settings: settings)
         let calls = calls
         focus.isInCall = { calls.inCall }
         activity.isInCall = { calls.inCall }
         idle.isInCall = { calls.inCall }
         pet.isInCall = { calls.inCall }
+        let inbox = inbox
+        pet.taskDue = { id in inbox.tasks.first { $0.id == id }?.due }
     }
 }

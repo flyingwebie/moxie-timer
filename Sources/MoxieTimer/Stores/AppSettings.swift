@@ -88,6 +88,12 @@ final class AppSettings {
     var petPraiseLines: String { didSet { defaults.set(petPraiseLines, forKey: "petPraiseLines") } }
     var petDriftLines: String { didSet { defaults.set(petDriftLines, forKey: "petDriftLines") } }
     var petUseAI: Bool { didSet { defaults.set(petUseAI, forKey: "petUseAI") } }
+    /// The active persona skill's id, or "quiet" (emoji only). Set when skills are first created.
+    var petPersona: String { didSet { defaults.set(petPersona, forKey: "petPersona") } }
+    /// "Surprise me": a different enabled persona each day.
+    var petPersonaRotate: Bool { didSet { defaults.set(petPersonaRotate, forKey: "petPersonaRotate") } }
+    /// AIEngine raw value tried first for the daily line writing, or "" for the normal engine order.
+    var petWriterEngine: String { didSet { defaults.set(petWriterEngine, forKey: "petWriterEngine") } }
     /// The user's own name, for the pet to call them by.
     var petUserName: String { didSet { defaults.set(petUserName, forKey: "petUserName") } }
     /// When the pet opens a line with "<name>, <hot word>!": "off", "nudges" or "all".
@@ -200,6 +206,9 @@ final class AppSettings {
         petPraiseLines = defaults.string(forKey: "petPraiseLines") ?? ""
         petDriftLines = defaults.string(forKey: "petDriftLines") ?? ""
         petUseAI = defaults.object(forKey: "petUseAI") as? Bool ?? false
+        petPersona = defaults.string(forKey: "petPersona") ?? ""
+        petPersonaRotate = defaults.object(forKey: "petPersonaRotate") as? Bool ?? false
+        petWriterEngine = defaults.string(forKey: "petWriterEngine") ?? AIEngine.claude.rawValue
         petUserName = defaults.string(forKey: "petUserName") ?? ""
         petCallMode = defaults.string(forKey: "petCallMode") ?? "off"
         petCallWord = defaults.string(forKey: "petCallWord") ?? "listen up"
