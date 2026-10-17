@@ -82,10 +82,18 @@ stay there, sleeps during breaks, and talks to you in a speech bubble.
 
 - **Mood, levels and a wardrobe:** XP (about 1 per focused minute, plus bonuses) unlocks a sparkle, bow, sprout,
   beanie, scarf, crown and halo. Click the pet for its mood, level and today's stats.
-- **Your tone:** Warm & playful, Coach, Quiet or a mix, a "Talk to me like…" description, and your own lines (with
-  `{task}`, `{app}`, `{name}`, `{level}`, `{streak}`).
-- **Lines written by AI:** a fresh set of 4 lines for every moment, in your tone and language, saved on your Mac so
-  they stay instant and work offline.
+- **Skills: who the pet is and how it reacts.** Pick a **persona** (Coach, Hype friend, Calm mentor, Drill sergeant,
+  Dry sarcastic, Italian nonna, Quiet, or your own), or let **Surprise me** pick a different one each day. Add
+  **situation rules** that change its lines when something is true: morning start, late night, Monday morning or
+  Friday afternoon, task due today, 90+ minutes without a break, a rough patch of drifts, a great run, or a long time
+  away. Up to two rules apply at once, in the order you set. Settings → Pet → **Manage skills…** opens the editor,
+  with example lines per moment (with `{task}`, `{app}`, `{level}`, `{streak}`) and a preview that writes sample lines.
+  Skills are Markdown files in `~/Library/Application Support/MoxieTimer/Skills`, so you can edit and share them.
+- **Fresh lines every day:** with AI on, the pet rewrites 8 lines per moment for your persona and 4 for each situation
+  rule once a day (and soon after you edit a skill), trying the "Write with" engine first (Claude Code CLI by
+  default). Lines stay instant and work offline. Big moments also get a line written on the spot from the time of day,
+  today's progress, the task's due date and what the pet said recently. It never repeats a line on the same day while
+  it has others to say.
 
 <p align="center"><img src="Support/pets-preview.png" width="640" alt="Pets and their moods"></p>
 
@@ -190,7 +198,7 @@ only installs updates signed by the same certificate or by the project's Develop
 
 Local entries (`~/Library/Application Support/MoxieTimer/history.json`) are backed up once a day, keeping 14 days;
 restore from Settings → Local data. Restoring merges missing entries back without overwriting newer ones. AI-written
-pet lines live in `pet-lines.json` in the same folder.
+pet lines live in `pet-skill-lines.json` and the pet's skills in `Skills/` in the same folder.
 
 On launch and every 6 hours, the app checks this repo's latest GitHub release. If the tag (`v1.2.0`) is newer than the
 installed version, it downloads `MoxieTimer-<version>.zip`, checks it against the `.sha256` file, swaps the app bundle

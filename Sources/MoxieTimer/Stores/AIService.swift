@@ -115,11 +115,14 @@ final class AIService {
 
     // MARK: Engines
 
-    func generate(instructions: String, prompt: String) async throws -> String {
+    /// Runs on the enabled engines in the user's order. `preferring` is tried first even when it's switched off
+    /// (used for the pet's daily line writing, which is worth a better model); the rest are the fallback.
+    func generate(instructions: String, prompt: String, preferring preferred: AIEngine? = nil) async throws -> String {
         isWorking = true
         defer { isWorking = false }
         var failures: [String] = []
-        for engine in order where enabled.contains(engine) {
+        let engines = (preferred.map { [$0] } ?? []) + order.filter { enabled.contains($0) && $0 != preferred }
+        for engine in engines {
             do {
                 let text = try await run(engine, instructions: instructions, prompt: prompt)
                     .trimmingCharacters(in: .whitespacesAndNewlines)

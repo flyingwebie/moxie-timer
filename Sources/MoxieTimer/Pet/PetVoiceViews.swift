@@ -151,7 +151,7 @@ struct PetVoiceSettingsSection: View {
             .frame(width: 230)
         }
         if model.isExpressive, PetVoice.languageVoices.contains(settings.petKittenVoice) {
-            note("Language voices only speak their own language well. Ask for it in “Talk to me like…” and turn on AI lines, since the built-in lines are in English.")
+            note("Language voices only speak their own language well. Ask for it in your persona (Manage skills…) and turn on AI lines, since the built-in lines are in English.")
         }
 
         if model.isExpressive {
