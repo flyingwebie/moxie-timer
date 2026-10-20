@@ -137,13 +137,11 @@ struct CaptureView: View {
 
     @State private var name = ""
     @State private var draft = EntryDraft()
-    @State private var dueChoice = 0
+    @State private var dueChoice: DueChoice = .none
     @State private var isSaving = false
     @State private var error: String?
     @State private var didPrefill = false
     @FocusState private var nameFocused: Bool
-
-    private let dueOptions = ["No date", "Today", "Tomorrow", "Next week"]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -165,7 +163,7 @@ struct CaptureView: View {
                     .textFieldStyle(.plain)
                     .font(.system(size: 15))
                     .focused($nameFocused)
-                    .onSubmit { save(focusNow: false) }
+                    .onSubmit { save(focusNow: true) }
             }
 
             VStack(alignment: .leading, spacing: 10) {
@@ -213,15 +211,15 @@ struct CaptureView: View {
             }
 
             HStack(spacing: 6) {
-                ForEach(dueOptions.indices, id: \.self) { index in
-                    Button { dueChoice = index } label: {
-                        Text(dueOptions[index])
-                            .font(.system(size: 12, weight: dueChoice == index ? .bold : .medium))
-                            .foregroundStyle(dueChoice == index ? .white : Theme.ink.opacity(0.8))
+                ForEach(DueChoice.allCases) { choice in
+                    Button { dueChoice = choice } label: {
+                        Text(choice.title)
+                            .font(.system(size: 12, weight: dueChoice == choice ? .bold : .medium))
+                            .foregroundStyle(dueChoice == choice ? .white : Theme.ink.opacity(0.8))
                             .padding(.horizontal, 10)
                             .frame(height: 26)
-                            .background(Capsule().fill(dueChoice == index ? Theme.navy : .white))
-                            .overlay(Capsule().strokeBorder(dueChoice == index ? .clear : Theme.border))
+                            .background(Capsule().fill(dueChoice == choice ? Theme.navy : .white))
+                            .overlay(Capsule().strokeBorder(dueChoice == choice ? .clear : Theme.border))
                     }
                     .buttonStyle(.plain)
                 }
@@ -232,18 +230,22 @@ struct CaptureView: View {
             }
 
             HStack(spacing: 8) {
-                Button { save(focusNow: true) } label: {
-                    Text("Add & focus now").frame(maxWidth: .infinity)
+                Button { save(focusNow: false) } label: {
+                    Text("Add for later").frame(maxWidth: .infinity)
                 }
                 .buttonStyle(ChipButtonStyle())
-                Button { save(focusNow: false) } label: {
+                .frame(maxWidth: 150)
+                .help("Add to Moxie and keep it in Up next")
+                Button { save(focusNow: true) } label: {
                     HStack(spacing: 6) {
-                        if isSaving { ProgressView().controlSize(.small).tint(.white) }
-                        Text("Add to Moxie")
+                        if isSaving { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "play.fill") }
+                        Text("Add & focus now")
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
+                .keyboardShortcut(.defaultAction)
+                .help("Add to Moxie and start focusing on it (Enter)")
             }
             .disabled(isSaving || name.trimmingCharacters(in: .whitespaces).isEmpty)
         }
@@ -252,8 +254,14 @@ struct CaptureView: View {
             nameFocused = true
             guard !didPrefill else { return }
             didPrefill = true
-            // Start unlinked; the timer's client/project is offered as a one-click chip instead.
+            // Start from the Up next filter (so the new task shows there); otherwise unlinked, with the
+            // timer's client/project offered as a one-click chip.
             draft = EntryDraft()
+            if let client = inbox.filterClient {
+                draft.setClient(client)
+                if let project = inbox.filterProject { draft.setProject(project) }
+                Task { await catalog.loadProjects(for: client) }
+            }
         }
     }
 
@@ -276,16 +284,7 @@ struct CaptureView: View {
         }
     }
 
-    private var dueDate: Date? {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: .now)
-        switch dueChoice {
-        case 1: return today
-        case 2: return calendar.date(byAdding: .day, value: 1, to: today)
-        case 3: return calendar.date(byAdding: .day, value: 7, to: today)
-        default: return nil
-        }
-    }
+    private var dueDate: Date? { dueChoice.date }
 
     private func save(focusNow: Bool) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
@@ -302,9 +301,11 @@ struct CaptureView: View {
                     ui.tab = .focus
                     ui.route = nil
                 } else {
-                    focus.banner = "Added “\(trimmed)” to Moxie."
+                    focus.banner = inbox.matchesFilter(task)
+                        ? "Added “\(trimmed)” to Moxie — it's at the top of Up next."
+                        : "Added “\(trimmed)” to Moxie. It's outside your current filter — clear the filter to see it."
+                    ui.tab = .focus
                     ui.route = nil
-                    ui.collapse()
                 }
             } catch {
                 self.error = error.localizedDescription

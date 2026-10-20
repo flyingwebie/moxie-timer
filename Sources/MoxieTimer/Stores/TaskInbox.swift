@@ -38,6 +38,14 @@ final class TaskInbox {
 
     var isFiltered: Bool { filterClient != nil || filterProject != nil }
 
+    /// Tasks captured from this widget this session, newest first. They stay pinned to the top of
+    /// "Up next" (ranking alone would bury a task with no due date) until they're focused or done.
+    private(set) var justAdded: [String] = []
+
+    func clearJustAdded(_ id: String) {
+        justAdded.removeAll { $0 == id }
+    }
+
     /// Clients that have open items (after "only mine" / tickets), with counts, for the filter menu.
     var filterClients: [(ref: Ref, count: Int)] {
         let grouped = Dictionary(grouping: baseItems.compactMap(\.clientRef), by: \.id)
@@ -88,7 +96,17 @@ final class TaskInbox {
             if let project = filterProject, task.projectRef?.id != project.id { return false }
             return true
         }
-        return TaskInbox.ranked(filtered, now: .now)
+        let ranked = TaskInbox.ranked(filtered, now: .now)
+        guard !justAdded.isEmpty else { return ranked }
+        let pinned = justAdded.compactMap { id in ranked.first { $0.id == id } }
+        return pinned + ranked.filter { !justAdded.contains($0.id) }
+    }
+
+    /// Whether a task would show under the current client/project filter.
+    func matchesFilter(_ task: MoxieTask) -> Bool {
+        if let client = filterClient, task.clientRef?.id != client.id { return false }
+        if let project = filterProject, task.projectRef?.id != project.id { return false }
+        return true
     }
 
     /// Open tasks (+ tickets) after "only mine", before the client/project filter.
@@ -117,7 +135,18 @@ final class TaskInbox {
         do {
             await resolveMe(api)
             let all = try await api.allTasks()
-            tasks = all.filter { $0.isOpen && $0.isSubTask != true }
+            var open = all.filter { $0.isOpen && $0.isSubTask != true }
+            // Keep tasks added from here that Moxie's list doesn't include yet, and fill in names it leaves out.
+            for id in justAdded {
+                guard let local = tasks.first(where: { $0.id == id }) else { continue }
+                if let index = open.firstIndex(where: { $0.id == id }) {
+                    if open[index].clientRef == nil, local.clientRef != nil { open[index].client = local.client; open[index].clientId = local.clientId }
+                    if open[index].projectRef == nil, local.projectRef != nil { open[index].project = local.project }
+                } else {
+                    open.insert(local, at: 0)
+                }
+            }
+            tasks = open
             // Tickets are a bonus: if they fail to load, tasks still show.
             if let open = try? await api.openTickets() {
                 tickets = open
@@ -144,14 +173,28 @@ final class TaskInbox {
         )
         let created = try await api.createTask(request)
         // Fall back to a local stand-in if Moxie's response didn't decode, so the user can focus on it straight away.
-        let task = created ?? MoxieTask(
+        var task = created ?? MoxieTask(
             id: "local-\(UUID().uuidString)", name: name, projectId: project?.id, status: nil, parentTaskId: nil,
             clientId: client?.id,
             client: client.map { .init(id: $0.id, name: $0.name) },
             project: project.map { .init(id: $0.id, name: $0.name) },
             dueDate: request.dueDate
         )
+        // Moxie's create response often leaves out the client/project names (sometimes the ids too).
+        // Without them the task has no client/project here and the inbox filter hides it, so fill them
+        // in from what was asked for.
+        if let client, task.clientRef == nil {
+            task.client = .init(id: client.id, name: client.name)
+            task.clientId = client.id
+        }
+        if let project, task.projectRef == nil {
+            task.project = .init(id: project.id, name: project.name)
+        }
+        if task.dueDate == nil { task.dueDate = request.dueDate }
+        tasks.removeAll { $0.id == task.id }
         tasks.insert(task, at: 0)
+        justAdded.removeAll { $0 == task.id }
+        justAdded.insert(task.id, at: 0)
         return task
     }
 

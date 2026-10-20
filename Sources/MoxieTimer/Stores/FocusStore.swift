@@ -153,6 +153,7 @@ final class FocusStore {
         )
         timer.draft = draft
         pickReason = nil
+        inbox.clearJustAdded(task.id)
     }
 
     /// Focus on something that isn't a Moxie task. Client/project are picked in the Timer tab.

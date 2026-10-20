@@ -34,11 +34,15 @@ struct TodayStrip: View {
     }
 }
 
-/// Tracked time per day this week, with the focus part highlighted.
+/// Tracked time per day for one week, with the focus part highlighted. Click a day to select it.
 struct WeekChart: View {
     @Environment(StatsStore.self) private var stats
     @Environment(HistoryStore.self) private var history
     @Environment(Clock.self) private var clock
+    /// Any date inside the week to show.
+    var week: Date? = nil
+    var title = "This week"
+    var selectedDay: Binding<Date?>? = nil
     @State private var hovered: Date?
 
     private struct Bar: Identifiable {
@@ -51,25 +55,26 @@ struct WeekChart: View {
     var body: some View {
         let bars = weekBars()
         let maxValue = max(bars.map { max($0.tracked, $0.focus) }.max() ?? 0, 3600)
+        let selected = selectedDay?.wrappedValue
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                CapsLabel("This week")
+                CapsLabel(title)
                 Spacer()
                 HStack(spacing: 8) {
                     legend(Theme.navy.opacity(0.25), "tracked")
                     legend(Theme.running, "focus")
                 }
             }
-            // Details for the hovered day (or the week's total).
+            // Details for the hovered (or selected) day, or the week's total.
             Group {
-                if let day = hovered, let bar = bars.first(where: { $0.date == day }) {
+                if let day = hovered ?? selected, let bar = bars.first(where: { $0.date == day }) {
                     Text("\(bar.date.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))): ")
                         .foregroundStyle(Theme.ink)
                     + Text("\(DurationFormat.short(bar.tracked)) tracked").foregroundStyle(Theme.navy).bold()
                     + Text(" · ").foregroundStyle(Theme.muted)
                     + Text("\(DurationFormat.short(bar.focus)) focus").foregroundStyle(Theme.running).bold()
                 } else {
-                    Text("Week: \(DurationFormat.short(bars.reduce(0) { $0 + $1.tracked })) tracked · \(DurationFormat.short(bars.reduce(0) { $0 + $1.focus })) focus — hover a day")
+                    Text("Week: \(DurationFormat.short(bars.reduce(0) { $0 + $1.tracked })) tracked · \(DurationFormat.short(bars.reduce(0) { $0 + $1.focus })) focus\(selectedDay == nil ? " — hover a day" : " — click a day to filter")")
                         .foregroundStyle(Theme.muted)
                 }
             }
@@ -79,15 +84,17 @@ struct WeekChart: View {
                 ForEach(bars) { bar in
                     let isToday = Calendar.current.isDate(bar.date, inSameDayAs: clock.now)
                     let isHovered = hovered == bar.date
+                    let isSelected = selected == bar.date
+                    let dimmed = selected != nil && !isSelected
                     VStack(spacing: 4) {
                         Text(bar.tracked > 0 ? DurationFormat.short(bar.tracked) : "")
                             .font(.system(size: 9, weight: .bold))
                             .foregroundStyle(Theme.ink)
-                            .opacity(isHovered ? 1 : 0)
+                            .opacity(isHovered || isSelected ? 1 : 0)
                             .frame(height: 11)
                         ZStack(alignment: .bottom) {
                             RoundedRectangle(cornerRadius: 3)
-                                .fill(Theme.navy.opacity(isHovered ? 0.5 : (isToday ? 0.35 : 0.2)))
+                                .fill(Theme.navy.opacity(isHovered || isSelected ? 0.5 : (isToday ? 0.35 : 0.2)))
                                 .frame(height: max(2, 60 * bar.tracked / maxValue))
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Theme.running)
@@ -95,14 +102,23 @@ struct WeekChart: View {
                                 .padding(.horizontal, 6)
                         }
                         .frame(height: 60, alignment: .bottom)
+                        .opacity(dimmed ? 0.45 : 1)
                         Text(bar.date.formatted(.dateTime.weekday(.narrow)))
-                            .font(.system(size: 10, weight: isToday ? .bold : .regular))
-                            .foregroundStyle(isToday ? Theme.ink : Theme.muted)
+                            .font(.system(size: 10, weight: isToday || isSelected ? .bold : .regular))
+                            .foregroundStyle(isSelected ? .white : (isToday ? Theme.ink : Theme.muted))
+                            .frame(width: 18, height: 16)
+                            .background(Circle().fill(isSelected ? Theme.navy : .clear))
                     }
                     .frame(maxWidth: .infinity)
                     .contentShape(Rectangle())
                     .onHover { inside in
                         if inside { hovered = bar.date } else if hovered == bar.date { hovered = nil }
+                    }
+                    .onTapGesture {
+                        guard let selectedDay else { return }
+                        withAnimation(.easeOut(duration: 0.15)) {
+                            selectedDay.wrappedValue = isSelected ? nil : bar.date
+                        }
                     }
                 }
             }
@@ -121,10 +137,11 @@ struct WeekChart: View {
 
     private func weekBars() -> [Bar] {
         let calendar = Calendar.current
-        guard let week = calendar.dateInterval(of: .weekOfYear, for: clock.now) else { return [] }
+        guard let interval = calendar.dateInterval(of: .weekOfYear, for: week ?? clock.now) else { return [] }
+        let entries = history.entries(in: interval)
         return (0..<7).compactMap { offset in
-            guard let day = calendar.date(byAdding: .day, value: offset, to: week.start) else { return nil }
-            let tracked = history.entries.filter { calendar.isDate($0.start, inSameDayAs: day) }.reduce(0) { $0 + $1.duration }
+            guard let day = calendar.date(byAdding: .day, value: offset, to: interval.start) else { return nil }
+            let tracked = entries.filter { calendar.isDate($0.start, inSameDayAs: day) }.reduce(0) { $0 + $1.duration }
             return Bar(date: day, tracked: tracked, focus: stats.day(day).focusSeconds)
         }
     }

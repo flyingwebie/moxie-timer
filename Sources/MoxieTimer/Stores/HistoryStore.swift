@@ -61,6 +61,21 @@ final class HistoryStore {
         return entries.filter { week.contains($0.start) }.reduce(0) { $0 + $1.duration }
     }
 
+    func entries(in interval: DateInterval) -> [LoggedEntry] {
+        entries.filter { $0.start >= interval.start && $0.start < interval.end }
+    }
+
+    func total(in interval: DateInterval) -> TimeInterval {
+        entries(in: interval).reduce(0) { $0 + $1.duration }
+    }
+
+    /// Day groups for entries that started inside `interval`, newest day first.
+    func groupedByDay(in interval: DateInterval) -> [DayGroup] {
+        let calendar = Calendar.current
+        let grouped = Dictionary(grouping: entries(in: interval)) { calendar.startOfDay(for: $0.start) }
+        return grouped.keys.sorted(by: >).map { DayGroup(day: $0, entries: grouped[$0]!.sorted { $0.start > $1.start }) }
+    }
+
     var groupedByDay: [DayGroup] {
         let calendar = Calendar.current
         let grouped = Dictionary(grouping: entries) { calendar.startOfDay(for: $0.start) }
