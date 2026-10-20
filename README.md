@@ -26,28 +26,43 @@ that floats above your work on every Space:
 
 <p align="center"><img src="docs/images/pill.png" width="475" alt="The floating pill: pet, add, call and the running timer"></p>
 
-Click it and you get a card with everything you need: pick one task, focus on it, log honest time, and send it to Moxie
-when you're ready. It's built for people who lose track easily, ADHD brains included.
+Click it and you get a card with everything you need: name the one thing, focus on it, log honest time, and send it to
+Moxie when you're ready. It's built for people who lose track easily, ADHD brains included.
 
 - ⏱ **One-click timer:** start, pause and stop from the pill or the menu bar. A running timer survives quitting.
-- 🎯 **Focus mode:** one task at a time, a tiny first step, adaptive focus blocks and real breaks.
+- 🎯 **Focus mode:** type a task, link it to a client and project, press Enter and you're focused. One task at a
+  time, a tiny first step, adaptive focus blocks and real breaks.
 - 🧾 **Time you can trust:** entries wait for your end-of-day review, with gap filling and "not tracking" reminders.
+- 📊 **Insights:** hours, focus, billable share and wins by week, month or year, and where the time went per client.
 - 🦊 **A pet that keeps you on track:** it celebrates, worries when you drift, and can talk with a local AI voice.
 - 📞 **Calls aware:** breaks, nudges and the pet wait while you're on a call, and the timer keeps going.
 - 🔒 **Local first:** your history, learned projects and AI voices stay on your Mac.
 
 ## Focus mode
 
-<img src="docs/images/focus.png" alt="Focus inbox and a running focus block" width="100%">
+<img src="docs/images/focus.png" alt="The Focus home with the quick-start box and Up next, and a running focus block" width="100%">
 
-- **What's the one thing?** Your open Moxie tasks and tickets, ranked by overdue, due soon, priority and age.
-  **Pick for me** chooses one (with AI if you turn it on). Filter by client or project.
+How it works:
+
+1. **Type the one thing.** The box at the top of the Focus tab is the main action. Pick a **client**, **project** and
+   **due date** right there (searchable chips), then press **Enter**: **Add & focus** creates the task in Moxie,
+   assigned to you, and starts focusing on it. **Add for later** adds it to Up next instead, and **Just focus** starts
+   without creating a Moxie task. When Up next is filtered, the box starts from that client and project, so new tasks
+   land where you're looking.
+2. **…or take it from Up next.** Your open Moxie tasks and tickets, ranked by overdue, due soon, priority and age, and
+   filtered by client or project. Tasks you just added stay pinned on top with a **NEW** badge. Hover a task and click
+   to focus on it, or let **Pick for me** choose (with AI if you turn it on).
+3. **Tiny first step**, then **focus in adaptive blocks** (below).
+
+More detail:
+
 - **Tiny first step:** write, or let AI suggest, a 2-minute first action. It stays visible while you work.
 - **Adaptive blocks:** a 5-minute warm-up, then focus. The suggested length grows after a block you finish and shrinks
   after one you stop early (15–90 min). When it ends, a full-screen break appears (snooze once for 5 min).
 - **Always in sight:** the pill shows the task and the time left. **Focus on this** turns a plain timer into a block
   without losing the time already tracked.
-- **Quick capture:** press **⌃⌥Space** anywhere to add a task straight to Moxie, assigned to you.
+- **Quick capture:** press **⌃⌥Space** anywhere to add a task straight to Moxie, assigned to you. **Add & focus now**
+  is the main button (Enter); **Add for later** keeps it in Up next.
 - **Staying on task:** mark distracting apps and sites. Drift to one and the pill turns amber with "Back to: *task*",
   then a notification, then a prompt: **Back to it**, **Back, drop N min**, **Take a break** or **It's for work**.
   Optional check-ins ask "Still on *task*?" every 20 minutes.
@@ -63,13 +78,31 @@ when you're ready. It's built for people who lose track easily, ADHD brains incl
   gaps** in your work hours, which you can fill with one click. Then everything goes to Moxie at once.
 - **Edit as you go:** ±5/±15 minute nudges, and type a start time or a duration (`45m`, `1.5h`, `1:30`).
 - **Client → project → task → ticket** pickers load live from Moxie, with search and a Billable switch.
-- **Recent:** today and this-week totals, a weekly chart with the focused part highlighted, and every entry from this
-  Mac. Click one for all its details: times, project, task, notes, billable, whether it was sent, and its Moxie ID.
+- **Recent, week by week:** step back through past weeks with the arrows. The totals, the chart (focused part
+  highlighted) and the entry list all follow the week you're viewing; click a day in the chart to list only that day.
+  Click an entry for all its details: times, project, task, notes, billable, whether it was sent, and its Moxie ID.
 - **"Not tracking" reminders:** active during work hours with no timer? The pill turns amber after 1 minute, a
   notification arrives after 2, and a prompt after 5. Starting from it back-dates the timer to when you began.
 - **Idle detection:** come back after time away (or sleep) and keep or discard that time.
 - **Project suggestions:** the app learns which apps (and, with Accessibility permission, which window titles) go with
   which client or project, and suggests them. The learned data stays in a local file.
+
+## Insights
+
+<img src="docs/images/insights.png" alt="The Insights tab: tracked and focus hours, wins and time per client" width="100%">
+
+A calm look back that counts what went right. Switch between **week**, **month** and **year**, and go back with the
+arrows.
+
+- **The numbers:** tracked hours, focus hours (and their share of tracked time), billable share, tasks done and focus
+  blocks. Tracked time is compared with the same point last period, so Tuesday afternoon is set against last Tuesday
+  afternoon, not a whole week.
+- **Hours per day** (per month in the year view), with the focused part highlighted. Hover a bar for its numbers.
+- **Wins:** your focus streak, best day, longest stretch, focus blocks finished and every drift you came back from.
+- **Where the time went:** hours per client with the billable part shown in the bar. Click a client for its projects.
+- **When you work:** a strip of your busiest hours of the day.
+
+It's built from the entries logged from this Mac and your focus blocks; time logged elsewhere in Moxie isn't included.
 
 ## Your pet
 
@@ -227,7 +260,10 @@ The app icon is original artwork (`Support/AppIcon.svg`). It doesn't use any Mox
 `swift scripts/make-icon.swift` to rebuild `Support/AppIcon.icns` from it.
 
 The screenshots in `docs/images` are of the real app with made-up demo data (Northwind Studio, Bluebird Bakery and
-friends are fictional).
+friends are fictional). `scripts/marketing/render.sh` regenerates `hero`, `focus`, `time` and `insights`: it builds the
+app's views with demo data in a throwaway home folder (your real data, settings and Keychain are never touched),
+briefly shows each screen in a corner of your display to capture it, and lays out the 1600×900 images with headless
+Chrome. Layouts live in `scripts/marketing/*.html`; `compose.sh` re-lays them out from saved captures.
 
 </details>
 
