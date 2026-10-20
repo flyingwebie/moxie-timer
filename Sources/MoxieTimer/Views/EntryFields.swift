@@ -242,6 +242,82 @@ struct SearchPicker<Item: Identifiable & Hashable>: View {
     }
 }
 
+/// Compact capsule version of `SearchPicker`, for picking a client/project inline (same searchable popover).
+struct SearchChip<Item: Identifiable & Hashable>: View {
+    let icon: String
+    let placeholder: String
+    let selection: String?
+    let items: [Item]
+    let title: (Item) -> String
+    var badge: (Item) -> String? = { _ in nil }
+    var isLoading = false
+    var disabled = false
+    var maxWidth: CGFloat = 130
+    var onOpen: () async -> Void = {}
+    var onRefresh: () async -> Void = {}
+    let onSelect: (Item?) -> Void
+
+    @State private var isOpen = false
+
+    init(
+        icon: String, placeholder: String, selection: String?, items: [Item],
+        title: KeyPath<Item, String>, badge: @escaping (Item) -> String? = { _ in nil },
+        isLoading: Bool = false, disabled: Bool = false, maxWidth: CGFloat = 130,
+        onOpen: @escaping () async -> Void = {}, onRefresh: @escaping () async -> Void = {},
+        onSelect: @escaping (Item?) -> Void
+    ) {
+        self.icon = icon
+        self.placeholder = placeholder
+        self.selection = selection
+        self.items = items
+        self.title = { $0[keyPath: title] }
+        self.badge = badge
+        self.isLoading = isLoading
+        self.disabled = disabled
+        self.maxWidth = maxWidth
+        self.onOpen = onOpen
+        self.onRefresh = onRefresh
+        self.onSelect = onSelect
+    }
+
+    var body: some View {
+        let active = selection != nil
+        Button {
+            isOpen = true
+            Task { await onOpen() }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text(selection ?? placeholder)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: maxWidth, alignment: .leading)
+                    .fixedSize(horizontal: true, vertical: false)
+                Image(systemName: "chevron.down").font(.system(size: 7, weight: .heavy)).opacity(0.6)
+            }
+            .font(.system(size: 11.5, weight: active ? .semibold : .medium))
+            .foregroundStyle(active ? Theme.navy : Theme.ink.opacity(0.6))
+            .padding(.horizontal, 9)
+            .frame(height: 24)
+            .background(Capsule().fill(active ? Theme.navy.opacity(0.09) : Theme.cream))
+            .overlay(Capsule().strokeBorder(active ? Theme.navy.opacity(0.3) : Theme.border))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.5 : 1)
+        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+            PickerList(
+                placeholder: placeholder, items: items, title: title, badge: badge,
+                selection: selection, isLoading: isLoading, onRefresh: onRefresh
+            ) { item in
+                onSelect(item)
+                isOpen = false
+            }
+        }
+    }
+}
+
 private struct PickerList<Item: Identifiable & Hashable>: View {
     let placeholder: String
     let items: [Item]

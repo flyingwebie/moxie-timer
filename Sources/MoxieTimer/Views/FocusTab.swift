@@ -10,7 +10,6 @@ struct FocusTab: View {
     @Environment(Clock.self) private var clock
     @Environment(WidgetUI.self) private var ui
 
-    @State private var freeform = ""
     @State private var isPicking = false
     @State private var isSuggesting = false
     @State private var chosenMinutes: Int?
@@ -42,62 +41,93 @@ struct FocusTab: View {
         VStack(alignment: .leading, spacing: 14) {
             TodayStrip()
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(greeting)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.muted)
                 Text("What's the one thing?")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(Theme.ink)
-                Text("Pick one task. Everything else can wait.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
             }
 
-            Button { Task { await pickForMe() } } label: {
-                HStack(spacing: 8) {
-                    if isPicking { ProgressView().controlSize(.small).tint(.white) } else { Image(systemName: "sparkles") }
-                    Text(isPicking ? "Choosing…" : "Pick for me")
+            QuickStartComposer()
+
+            upNext
+        }
+    }
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: clock.now)
+        let part = hour < 12 ? "Good morning" : (hour < 18 ? "Good afternoon" : "Good evening")
+        return "\(part) · \(clock.now.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
+    }
+
+    private var upNext: some View {
+        let all = inbox.visibleTasks
+        let rows = Array(all.prefix(5))
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                CapsLabel("Up next")
+                if !all.isEmpty {
+                    Text("\(all.count)")
+                        .font(.system(size: 10, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Theme.muted)
+                        .padding(.horizontal, 6)
+                        .frame(height: 16)
+                        .background(Capsule().fill(Theme.cream))
                 }
-                .frame(maxWidth: .infinity)
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(isPicking)
-
-            HStack(spacing: 8) {
-                Button { ui.route = .tasks } label: { Label("All tasks", systemImage: "list.bullet") }
-                    .buttonStyle(ChipButtonStyle())
-                Button { ui.route = .capture } label: { Label("New task", systemImage: "plus") }
-                    .buttonStyle(ChipButtonStyle())
                 Spacer()
-                if inbox.isLoading { ProgressView().controlSize(.small) }
-            }
-
-            FieldBox {
-                TextField("…or just type what you'll do", text: $freeform)
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        let name = freeform.trimmingCharacters(in: .whitespaces)
-                        guard !name.isEmpty else { return }
-                        freeform = ""
-                        Task { await focus.select(freeform: name) }
+                Button { Task { await pickForMe() } } label: {
+                    HStack(spacing: 4) {
+                        if isPicking { ProgressView().controlSize(.mini) } else { Image(systemName: "sparkles") }
+                        Text(isPicking ? "Choosing…" : "Pick for me")
                     }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.navy)
+                    .padding(.horizontal, 9)
+                    .frame(height: 24)
+                    .background(Capsule().fill(Theme.navy.opacity(0.07)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(isPicking || (all.isEmpty && !inbox.tasks.isEmpty))
+                .help(ai.hasEnabledEngine ? "Let AI choose the best next task from this list" : "Choose the most urgent task from this list")
             }
 
             InboxFilterBar()
 
-            let upNext = Array(inbox.visibleTasks.prefix(4))
-            if upNext.isEmpty, inbox.isFiltered, !inbox.isLoading {
-                Text("No open tasks for this filter.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
-            }
-            if !upNext.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    CapsLabel(inbox.isFiltered ? "Up next · filtered" : "Up next")
-                    ForEach(upNext) { task in
-                        TaskRow(task: task) { Task { await focus.select(task) } }
+            if rows.isEmpty {
+                if inbox.isLoading {
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small)
+                        Text("Loading your tasks…").font(.system(size: 12)).foregroundStyle(Theme.muted)
+                    }
+                    .padding(.vertical, 10)
+                } else if let error = inbox.lastError {
+                    ErrorBanner(message: error) { inbox.lastError = nil }
+                } else {
+                    Text(inbox.isFiltered ? "Nothing open for this filter — add one above." : "No open tasks. Add one above.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                        .padding(.vertical, 6)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(rows) { task in
+                        TaskRow(task: task, isNew: inbox.justAdded.contains(task.id)) { Task { await focus.select(task) } }
                     }
                 }
-            } else if let error = inbox.lastError {
-                ErrorBanner(message: error) { inbox.lastError = nil }
+                Button { ui.route = .tasks } label: {
+                    HStack(spacing: 4) {
+                        Text(all.count > rows.count ? "See all \(all.count) tasks" : "Open task list")
+                        Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold))
+                    }
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.navy)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 8)
             }
         }
     }
@@ -109,7 +139,7 @@ struct FocusTab: View {
         let candidates = Array(inbox.visibleTasks.prefix(12))
         guard let fallback = candidates.first else {
             // A load error is already shown under the list; only explain the empty case here.
-            if inbox.lastError == nil { focus.lastError = "No open tasks found in Moxie. Add one with “New task”." }
+            if inbox.lastError == nil { focus.lastError = "No open tasks found in Moxie. Add one above." }
             return
         }
         var chosen = fallback
@@ -364,6 +394,7 @@ struct FocusTab: View {
 
 struct TaskRow: View {
     let task: MoxieTask
+    var isNew = false
     let action: () -> Void
     @Environment(FocusStore.self) private var focus
     @Environment(AppSettings.self) private var settings
@@ -380,10 +411,21 @@ struct TaskRow: View {
                         .frame(width: 8, height: 8)
                         .frame(width: 10)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(task.name)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundStyle(Theme.ink)
-                            .lineLimit(1)
+                        HStack(spacing: 5) {
+                            Text(task.name)
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.ink)
+                                .lineLimit(1)
+                            if isNew {
+                                Text("NEW")
+                                    .font(.system(size: 8.5, weight: .heavy))
+                                    .tracking(0.5)
+                                    .foregroundStyle(Theme.running)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1.5)
+                                    .background(Capsule().fill(Theme.running.opacity(0.14)))
+                            }
+                        }
                         HStack(spacing: 5) {
                             KindBadge(isTicket: task.isTicket)
                             let context = [task.client?.name, task.project?.name].compactMap { $0 }.joined(separator: " · ")
@@ -393,7 +435,16 @@ struct TaskRow: View {
                         }
                     }
                     Spacer(minLength: 4)
-                    if let due = task.due, !(hovering || confirming) { DueBadge(date: due) }
+                    if hovering, !confirming {
+                        Image(systemName: "play.fill")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 20, height: 20)
+                            .background(Circle().fill(Theme.navy))
+                            .help("Focus on this")
+                    } else if let due = task.due, !confirming {
+                        DueBadge(date: due)
+                    }
                 }
                 .padding(.leading, 8)
                 .padding(.vertical, 7)

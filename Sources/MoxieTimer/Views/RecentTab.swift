@@ -7,12 +7,54 @@ struct RecentTab: View {
     @Environment(WidgetUI.self) private var ui
     /// The entry opened to show its details.
     @State private var openEntry: String?
+    /// 0 = this week, -1 = last week, …
+    @State private var weekOffset = 0
+    /// Narrow the list to one day of the shown week (click a bar).
+    @State private var selectedDay: Date?
+
+    private var weekInterval: DateInterval {
+        let calendar = Calendar.current
+        let anchor = calendar.date(byAdding: .weekOfYear, value: weekOffset, to: clock.now) ?? clock.now
+        return calendar.dateInterval(of: .weekOfYear, for: anchor) ?? DateInterval(start: anchor, duration: 7 * 86_400)
+    }
+
+    private var weekTitle: String {
+        switch weekOffset {
+        case 0: return "This week"
+        case -1: return "Last week"
+        default: return "\(-weekOffset) weeks ago"
+        }
+    }
+
+    private var weekRange: String {
+        let end = weekInterval.end.addingTimeInterval(-1)
+        let start = weekInterval.start
+        let sameMonth = Calendar.current.isDate(start, equalTo: end, toGranularity: .month)
+        let startText = start.formatted(.dateTime.month(.abbreviated).day())
+        let endText = sameMonth ? end.formatted(.dateTime.day()) : end.formatted(.dateTime.month(.abbreviated).day())
+        return "\(startText) – \(endText)"
+    }
 
     var body: some View {
+        let interval = weekInterval
+        let weekTotal = history.total(in: interval)
+        let groups = history.groupedByDay(in: interval).filter { group in
+            selectedDay.map { Calendar.current.isDate(group.day, inSameDayAs: $0) } ?? true
+        }
+        let daysWithTime = Set(history.entries(in: interval).map { Calendar.current.startOfDay(for: $0.start) }).count
+
         VStack(alignment: .leading, spacing: 12) {
+            weekNavigator
+
             HStack(spacing: 8) {
-                stat("Today", DurationFormat.short(history.total(today: clock.now)))
-                stat("This week", DurationFormat.short(history.total(week: clock.now)))
+                if let day = selectedDay {
+                    stat(day.formatted(.dateTime.weekday(.wide)), DurationFormat.short(groups.first?.total ?? 0))
+                } else if weekOffset == 0 {
+                    stat("Today", DurationFormat.short(history.total(today: clock.now)))
+                } else {
+                    stat("Daily average", DurationFormat.short(daysWithTime == 0 ? 0 : weekTotal / Double(daysWithTime)))
+                }
+                stat(weekTitle, DurationFormat.short(weekTotal))
                 Button { ui.route = .addEntry } label: {
                     VStack(spacing: 2) {
                         Image(systemName: "plus").font(.system(size: 14, weight: .medium))
@@ -27,22 +69,24 @@ struct RecentTab: View {
                 .help("Add a time entry manually")
             }
 
-            WeekChart()
+            WeekChart(week: interval.start, title: weekTitle, selectedDay: $selectedDay)
 
-            if history.entries.isEmpty {
+            if groups.isEmpty {
                 VStack(spacing: 6) {
                     Image(systemName: "clock.badge.checkmark").font(.system(size: 26)).foregroundStyle(Theme.faint)
-                    Text("Entries you log from this widget show up here.")
+                    Text(history.entries.isEmpty
+                         ? "Entries you log from this widget show up here."
+                         : (selectedDay != nil ? "Nothing logged on this day." : "Nothing logged this week."))
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.muted)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 40)
+                .frame(height: 140)
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        ForEach(history.groupedByDay) { group in
+                        ForEach(groups) { group in
                             Section {
                                 ForEach(group.entries) { entry in
                                     EntryRow(entry: entry, canStart: timer.session == nil, isOpen: openEntry == entry.id, onToggle: {
@@ -72,15 +116,72 @@ struct RecentTab: View {
                         }
                     }
                 }
-                .frame(height: 340)
+                .frame(height: 300)
             }
 
-            Text("Click an entry for its details. Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
+            Text("Click an entry for its details, or a day in the chart to show only that day. Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
+    }
+
+    private var weekNavigator: some View {
+        HStack(spacing: 6) {
+            navButton("chevron.left", help: "Previous week") { shiftWeek(-1) }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(weekTitle)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                Text(weekRange)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.muted)
+            }
+            .frame(minWidth: 110, alignment: .leading)
+            navButton("chevron.right", help: "Next week") { shiftWeek(1) }
+                .disabled(weekOffset >= 0)
+                .opacity(weekOffset >= 0 ? 0.35 : 1)
+            Spacer()
+            if let day = selectedDay {
+                Button {
+                    withAnimation(.easeOut(duration: 0.15)) { selectedDay = nil }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(day.formatted(.dateTime.weekday(.abbreviated).day()))
+                        Image(systemName: "xmark").font(.system(size: 8, weight: .heavy))
+                    }
+                }
+                .buttonStyle(ChipButtonStyle())
+                .help("Show the whole week")
+            }
+            if weekOffset != 0 {
+                Button("This week") { shiftWeek(-weekOffset) }
+                    .buttonStyle(ChipButtonStyle())
+            }
+        }
+    }
+
+    private func navButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundStyle(Theme.ink.opacity(0.75))
+                .frame(width: 26, height: 26)
+                .background(Circle().fill(Theme.cream))
+                .overlay(Circle().strokeBorder(Theme.border))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func shiftWeek(_ delta: Int) {
+        withAnimation(.easeOut(duration: 0.15)) {
+            weekOffset = min(0, weekOffset + delta)
+            selectedDay = nil
+            openEntry = nil
+        }
     }
 
     private func stat(_ title: String, _ value: String) -> some View {
