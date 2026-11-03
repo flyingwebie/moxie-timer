@@ -40,10 +40,11 @@ final class NudgePromptController {
         self.panel = panel
         fit()
         panel.orderFrontRegardless()
+        panel.makeKey()  // nonactivating, so this doesn't steal focus from whatever app you're in
         NSSound(named: "Ping")?.play()
         // The urgent list comes from the task inbox; refresh it if it's old and refit once it lands.
         Task {
-            await model.inbox.refreshIfStale()
+            await model.inbox.refreshIfStale(mcp: model.live.isActive ? model.live.mcp : nil)
             fit()
         }
     }
@@ -69,6 +70,8 @@ struct NudgePromptView: View {
     @Environment(TaskInbox.self) private var inbox
     @Environment(FocusStore.self) private var focus
     let close: () -> Void
+    /// Which urgent row Return would start; arrow keys move it.
+    @State private var selectedUrgentIndex = 0
 
     var body: some View {
         Group {
@@ -223,6 +226,7 @@ struct NudgePromptView: View {
 
 extension NudgePromptView {
     /// The few most urgent open tasks/tickets (same ranking as Up next): one click starts a focus block on it.
+    /// The first item is pre-selected; Return starts whichever is selected, arrow keys move the selection.
     @ViewBuilder var urgentList: some View {
         let items = Array(inbox.visibleTasks.prefix(4))
         if !items.isEmpty {
@@ -237,12 +241,27 @@ extension NudgePromptView {
                     }
                 }
                 VStack(spacing: 2) {
-                    ForEach(items) { task in
-                        UrgentRow(task: task) { start(task) }
+                    ForEach(Array(items.enumerated()), id: \.element.id) { index, task in
+                        UrgentRow(task: task, selected: index == selectedUrgentIndex) { start(task) }
                     }
                 }
                 .padding(4)
                 .background(RoundedRectangle(cornerRadius: 12).fill(Theme.cream.opacity(0.7)))
+                // Invisible default-action button: Return starts the selected row without a visible focus ring.
+                Button("") {
+                    guard items.indices.contains(selectedUrgentIndex) else { return }
+                    start(items[selectedUrgentIndex])
+                }
+                .keyboardShortcut(.defaultAction)
+                .frame(width: 0, height: 0)
+                .opacity(0)
+            }
+            .onMoveCommand { direction in
+                switch direction {
+                case .up: selectedUrgentIndex = max(0, selectedUrgentIndex - 1)
+                case .down: selectedUrgentIndex = min(items.count - 1, selectedUrgentIndex + 1)
+                default: break
+                }
             }
         }
     }
@@ -261,17 +280,20 @@ extension NudgePromptView {
 
 private struct UrgentRow: View {
     let task: MoxieTask
+    var selected: Bool = false
     let action: () -> Void
     @State private var hovering = false
+
+    private var highlighted: Bool { hovering || selected }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
                 Image(systemName: "play.fill")
                     .font(.system(size: 8, weight: .bold))
-                    .foregroundStyle(hovering ? .white : Theme.navy)
+                    .foregroundStyle(highlighted ? .white : Theme.navy)
                     .frame(width: 20, height: 20)
-                    .background(Circle().fill(hovering ? Theme.navy : Theme.navy.opacity(0.08)))
+                    .background(Circle().fill(highlighted ? Theme.navy : Theme.navy.opacity(0.08)))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(task.name)
                         .font(.system(size: 12.5, weight: .semibold))
@@ -292,12 +314,13 @@ private struct UrgentRow: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 5)
-            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hovering ? 1 : 0)))
+            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(highlighted ? 1 : 0)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Theme.navy.opacity(0.35) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("Start a focus block on this now")
+        .help("Start a focus block on this now (Return starts the selected row)")
     }
 }
 

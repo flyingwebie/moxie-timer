@@ -113,6 +113,23 @@ final class AIService {
         return (number - 1, parts.count > 1 ? parts[1] : "")
     }
 
+    /// A short private "what I did" note for a ticket, offered for editing before it's posted as a comment.
+    func ticketNote(ticket: String, firstStep: String, notes: String, duration: TimeInterval) async throws -> String {
+        let context = [
+            firstStep.trimmingCharacters(in: .whitespaces).isEmpty ? nil : "First step: \(firstStep)",
+            notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : "Timer notes: \(notes)",
+            "Time spent: \(DurationFormat.short(duration))",
+        ].compactMap { $0 }.joined(separator: "\n")
+        let reply = try await generate(
+            instructions: """
+            Write a short private, internal note (2-4 plain sentences, no greeting or signoff) summarising work \
+            just finished on a support ticket, for teammates who read the ticket later. Be concrete about what was done.
+            """,
+            prompt: "Ticket: \(ticket)\n\(context)"
+        )
+        return reply.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     // MARK: Engines
 
     /// Runs on the enabled engines in the user's order. `preferring` is tried first even when it's switched off

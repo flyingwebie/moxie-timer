@@ -17,6 +17,14 @@ struct FocusTarget: Codable, Equatable {
     }
 }
 
+/// A drafted "what I did" note, offered before it's posted as a private ticket comment.
+struct TicketNoteDraft: Identifiable {
+    var ticketId: String
+    var ticketName: String
+    var text: String
+    var id: String { ticketId }
+}
+
 /// One focus block and the break that follows it.
 struct FocusBlock: Codable, Equatable {
     enum Phase: String, Codable {
@@ -88,6 +96,8 @@ final class FocusStore {
     var pickReason: String?
     var lastError: String?
     private(set) var isFinishing = false
+    /// A "what I did" note offered after finishing work on a ticket, waiting for "Post" or "Skip".
+    var pendingTicketNote: TicketNoteDraft?
     /// Bumped each time something gets done; the widget plays confetti when it changes.
     private(set) var celebrations = 0
 
@@ -123,6 +133,42 @@ final class FocusStore {
         }
         RunLoop.main.add(ticker, forMode: .common)
         self.ticker = ticker
+
+        timer.onChange = { [weak self] in self?.followTimer() }
+        followTimer()
+    }
+
+    /// While the timer runs, Focus shows exactly what it tracks. The timer can change from many places
+    /// (Timer tab fields, Recent's "start again", a timer picked up from Moxie or an AI assistant);
+    /// without this the Focus tab, the pet and the nudges talked about a different task.
+    private func followTimer() {
+        guard timer.session != nil else { return }
+        let draft = timer.draft
+        let notes = draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name: String
+        if let task = draft.task {
+            name = task.name
+        } else if let ticket = draft.ticket {
+            name = notes.isEmpty ? ticket.name : notes
+        } else {
+            name = notes.isEmpty ? (draft.project?.name ?? "Current work") : notes
+        }
+
+        var next: FocusTarget
+        if let current = target, current.taskId == draft.task?.id, current.ticketId == draft.ticket?.id {
+            next = current  // same work: keep the first step and due date
+        } else {
+            let source = inbox.tasks.first {
+                (draft.task != nil && $0.id == draft.task?.id) || (draft.ticket != nil && $0.sourceTicketId == draft.ticket?.id)
+            }
+            next = FocusTarget(name: name, taskId: draft.task?.id, ticketId: draft.ticket?.id,
+                               projectTypeId: source?.projectTypeId, due: source?.dueDate)
+            pickReason = nil
+        }
+        next.name = name
+        next.clientName = draft.client?.name
+        next.projectName = draft.project?.name
+        if next != target { target = next }
     }
 
     /// Set by the app: true while on a call. The break screen never covers a call; a due break waits until it ends.
@@ -206,6 +252,7 @@ final class FocusStore {
                 return true
             }
             // Old or paused time with no client: keep it for Review instead of adding it to the new task.
+            if let current = block { recordUnfinished(current) }
             block = nil
             let held = timer.holdCurrent()
             if held > 0 {
@@ -213,8 +260,9 @@ final class FocusStore {
             }
             return true
         }
-        let previous = timer.draft.task?.name ?? timer.draft.project?.name ?? "previous work"
+        let previous = timer.draft.task?.name ?? timer.draft.ticket?.name ?? timer.draft.project?.name ?? "previous work"
         let elapsed = timer.session?.elapsed(at: .now) ?? 0
+        if let current = block { recordUnfinished(current) }
         block = nil
         await timer.stopAndSave()
         if let error = timer.lastError {
@@ -380,6 +428,27 @@ final class FocusStore {
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    // MARK: Ticket notes
+
+    /// Posts the drafted note as a PRIVATE ticket comment — never shown to the client. Only called from
+    /// an explicit "Post private note" tap; the sheet's "Skip" calls `skipTicketNote()` instead.
+    func postTicketNote(mcp: MoxieMCP) async {
+        guard let draft = pendingTicketNote else { return }
+        let text = draft.text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { pendingTicketNote = nil; return }
+        do {
+            try await mcp.postPrivateTicketComment(ticketId: draft.ticketId, comment: text)
+            pendingTicketNote = nil
+            banner = "Posted a private note on the ticket."
+        } catch {
+            lastError = "Couldn't post the note: \(error.localizedDescription)"
+        }
+    }
+
+    func skipTicketNote() {
+        pendingTicketNote = nil
     }
 
     // MARK: Breaks

@@ -22,9 +22,11 @@ struct InsightsTab: View {
     @State private var offset = 0
     @State private var hoveredBucket: Date?
     @State private var openClient: String?
+    @State private var openUnbilledClient: String?
 
     var body: some View {
-        let current = InsightsData(interval: interval(offset), period: period, history: history, stats: stats, now: clock.now)
+        let range = interval(offset)
+        let current = InsightsData(interval: range, period: period, history: history, stats: stats, now: clock.now)
         let previous = InsightsData(interval: comparisonInterval, period: period, history: history, stats: stats, now: clock.now)
 
         VStack(alignment: .leading, spacing: 12) {
@@ -32,6 +34,7 @@ struct InsightsTab: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     kpis(current, previous)
+                    unbilledCard(range)
                     if current.tracked == 0 && current.focus == 0 {
                         emptyState
                     } else {
@@ -50,6 +53,7 @@ struct InsightsTab: View {
             .frame(height: 470)
         }
         .padding(16)
+        .task(id: range) { await MoxieEntriesCache.shared.refresh(range) }
     }
 
     // MARK: Period
@@ -317,6 +321,127 @@ struct InsightsTab: View {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: Unbilled hours by client
+
+    private struct UnbilledRow: Identifiable {
+        let name: String
+        var hours: TimeInterval = 0
+        var projects: [(name: String, hours: TimeInterval)] = []
+        var id: String { name }
+    }
+
+    /// With MCP connected: billable time from Moxie's own entries, excluding anything already invoiced
+    /// — true "unbilled" hours. Without it: billable time from local history, labelled "billable" since
+    /// invoice state isn't knowable from the Public API.
+    private func unbilledRows(_ range: DateInterval) -> (rows: [UnbilledRow], confirmedUnbilled: Bool) {
+        var byClient: [String: UnbilledRow] = [:]
+        var byProject: [String: [String: TimeInterval]] = [:]
+        let confirmed = AppModel.shared.live.isActive
+        if confirmed {
+            for entry in MoxieEntriesCache.shared.entries(for: range) where entry.isBillable && !entry.isInvoiced {
+                let name = entry.clientName ?? "No client"
+                byClient[name, default: UnbilledRow(name: name)].hours += entry.duration
+                byProject[name, default: [:]][entry.projectName ?? "No project", default: 0] += entry.duration
+            }
+        } else {
+            for entry in history.entries(in: range) where entry.isBillable {
+                let name = entry.draft.client?.name ?? "No client"
+                byClient[name, default: UnbilledRow(name: name)].hours += entry.duration
+                byProject[name, default: [:]][entry.draft.project?.name ?? "No project", default: 0] += entry.duration
+            }
+        }
+        let rows = byClient.values.map { row in
+            var row = row
+            row.projects = (byProject[row.name] ?? [:]).map { ($0.key, $0.value) }.sorted { $0.1 > $1.1 }
+            return row
+        }.sorted { $0.hours > $1.hours }
+        return (rows, confirmed)
+    }
+
+    private func unbilledCard(_ range: DateInterval) -> some View {
+        let (rows, confirmed) = unbilledRows(range)
+        let total = rows.reduce(0) { $0 + $1.hours }
+        let top = max(rows.first?.hours ?? 0, 1)
+        let title = confirmed ? "Unbilled this \(period.rawValue.lowercased())" : "Billable hours this \(period.rawValue.lowercased())"
+        return card {
+            HStack {
+                CapsLabel(title)
+                Spacer()
+                Text(DurationFormat.short(total)).font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.ink)
+            }
+            if rows.isEmpty {
+                Text(confirmed ? "Nothing unbilled in this period." : "No billable time logged in this period.")
+                    .font(.system(size: 11)).foregroundStyle(Theme.muted)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(rows.prefix(5)) { row in
+                        let open = openUnbilledClient == row.name
+                        VStack(alignment: .leading, spacing: 6) {
+                            Button {
+                                withAnimation(.easeOut(duration: 0.15)) { openUnbilledClient = open ? nil : row.name }
+                            } label: {
+                                HStack(spacing: 10) {
+                                    ClientAvatar(name: row.name, size: 22)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        HStack(spacing: 6) {
+                                            Text(row.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(Theme.ink).lineLimit(1)
+                                            Spacer(minLength: 4)
+                                            Text(DurationFormat.short(row.hours))
+                                                .font(.system(size: 12, weight: .semibold).monospacedDigit())
+                                                .foregroundStyle(Theme.ink)
+                                        }
+                                        GeometryReader { proxy in
+                                            ZStack(alignment: .leading) {
+                                                Capsule().fill(Theme.navy.opacity(0.07))
+                                                Capsule().fill(Theme.navy.opacity(0.6)).frame(width: max(4, proxy.size.width * row.hours / top))
+                                            }
+                                        }
+                                        .frame(height: 5)
+                                    }
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 8, weight: .bold))
+                                        .foregroundStyle(Theme.faint)
+                                        .rotationEffect(.degrees(open ? 90 : 0))
+                                }
+                                .padding(.vertical, 3)
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .help("\(row.name): \(DurationFormat.short(row.hours))")
+                            if open {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    ForEach(row.projects, id: \.name) { project in
+                                        HStack(spacing: 6) {
+                                            Circle().fill(Theme.navy.opacity(0.35)).frame(width: 5, height: 5)
+                                            Text(project.name).font(.system(size: 11)).foregroundStyle(Theme.ink.opacity(0.8)).lineLimit(1)
+                                            Spacer(minLength: 4)
+                                            Text(DurationFormat.short(project.hours))
+                                                .font(.system(size: 11, weight: .medium).monospacedDigit())
+                                                .foregroundStyle(Theme.ink.opacity(0.8))
+                                        }
+                                    }
+                                }
+                                .padding(.leading, 32)
+                                .padding(.bottom, 4)
+                            }
+                        }
+                    }
+                    if rows.count > 5 {
+                        Text("+ \(rows.count - 5) more · \(DurationFormat.short(rows.dropFirst(5).reduce(0) { $0 + $1.hours }))")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.muted)
+                            .padding(.leading, 32)
+                    }
+                }
+            }
+            if !confirmed {
+                Text("Turn on Moxie's live timer in Settings to see what's actually unbilled (this is billable time; invoice state isn't visible to the Public API).")
+                    .font(.system(size: 9.5))
+                    .foregroundStyle(Theme.faint)
             }
         }
     }

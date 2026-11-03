@@ -132,7 +132,7 @@ enum Demo {
         .environment(model.ui).environment(model.clock).environment(model.updater).environment(model.ai)
         .environment(model.inbox).environment(model.focus).environment(model.idle).environment(model.activity)
         .environment(model.stats).environment(model.pet).environment(model.voice).environment(model.petLines)
-        .environment(model.petSkills).environment(model.calls)
+        .environment(model.petSkills).environment(model.calls).environment(model.live)
         .padding(EdgeInsets(top: 10, leading: 24, bottom: 34, trailing: 24))
         .fixedSize()
 

@@ -7,6 +7,7 @@ struct WidgetRoot: View {
     @Environment(ActivityWatcher.self) private var activity
     @Environment(AppSettings.self) private var rootSettings
     @Environment(FocusStore.self) private var rootFocus
+    @Environment(CallFollowUp.self) private var callFollowUp
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -16,6 +17,9 @@ struct WidgetRoot: View {
             }
             if activity.checkInDue {
                 CheckInBubble()
+            }
+            if callFollowUp.offer != nil {
+                CallEndedBanner()
             }
             if ui.expanded {
                 ExpandedCard()
@@ -40,6 +44,7 @@ struct PillBar: View {
     @Environment(FocusStore.self) private var focus
     @Environment(ActivityWatcher.self) private var activity
     @Environment(CallDetector.self) private var calls
+    @Environment(MoxieLiveTimer.self) private var live
 
     private var notTracking: Bool {
         activity.nudge != .none && timer.session?.isRunning != true
@@ -64,6 +69,19 @@ struct PillBar: View {
                 }
                 .buttonStyle(.plain)
                 .help("Moxie Timer \(release.version) is available")
+            }
+
+            if live.pendingRemote != nil {
+                Button { ui.expand() } label: {
+                    Image(systemName: "timer")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 34, height: 34)
+                        .background(RoundedRectangle(cornerRadius: 9).fill(Theme.onBreak))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Moxie has a timer running on something else — click to review")
             }
 
             Button { ui.expand(route: .addEntry) } label: {
@@ -119,6 +137,15 @@ struct PillBar: View {
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(Theme.onBreak)
                     } else {
+                        if let name = currentWorkName {
+                            Text(truncated(name))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                                .frame(maxWidth: 140, alignment: .leading)
+                                .help(workHelp(name))
+                        }
                         Text(timeText)
                             .font(.system(size: 14, weight: .semibold).monospacedDigit())
                             .foregroundStyle(Theme.ink)
@@ -167,6 +194,30 @@ struct PillBar: View {
     private var timeText: String {
         guard let session = timer.session else { return "0:00:00" }
         return DurationFormat.clock(session.elapsed(at: clock.now))
+    }
+
+    /// The task this timer is tracking, for display next to the clock: focus target first, then whatever
+    /// the draft is logging against.
+    private var currentWorkName: String? {
+        if let name = focus.target?.name { return name }
+        let draft = timer.draft
+        if let name = draft.task?.name { return name }
+        if let name = draft.ticket?.name { return name }
+        let notes = draft.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !notes.isEmpty { return notes }
+        if let name = draft.project?.name { return name }
+        return nil
+    }
+
+    private func truncated(_ name: String, max: Int = 22) -> String {
+        guard name.count > max else { return name }
+        return String(name.prefix(max - 1)) + "…"
+    }
+
+    private func workHelp(_ name: String) -> String {
+        let draft = timer.draft
+        let parts = [draft.client?.name, draft.project?.name].compactMap { $0 }
+        return parts.isEmpty ? name : "\(name)\n\(parts.joined(separator: " · "))"
     }
 
     private var dotColor: Color {
@@ -253,6 +304,7 @@ struct ExpandedCard: View {
                     UpdateBanner()
                     IdleBanner()
                     ReviewBanner()
+                    RemoteTimerBanner()
                     SaveNoticeBanner()
                     header
                     switch ui.tab {

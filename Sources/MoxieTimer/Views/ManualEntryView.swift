@@ -16,7 +16,12 @@ struct ManualEntryView: View {
     @State private var isSaving = false
     @State private var error: String?
     @State private var didPrefill = false
+    @State private var confirmingDelete = false
     @FocusState private var durationFocused: Bool
+
+    /// True once `editing` is a sent entry (local copy or one found only in Moxie) that can be edited or
+    /// deleted directly in Moxie through MCP.
+    private var editingIsRemote: Bool { editing?.moxieId != nil && AppModel.shared.live.isActive }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -56,11 +61,19 @@ struct ManualEntryView: View {
                 ErrorBanner(message: error) { self.error = nil }
             }
 
+            if editingIsRemote {
+                Text("This entry is sent to Moxie. Changes save there too; an already-invoiced entry can't be changed.")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(Theme.muted)
+            }
+
             HStack {
                 if let editing {
                     Button(role: .destructive) {
-                        history.remove(editing)
-                        close()
+                        if editing.moxieId != nil { confirmingDelete = true } else {
+                            history.remove(editing)
+                            close()
+                        }
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
@@ -92,7 +105,7 @@ struct ManualEntryView: View {
             let seed = ui.editorSeed
             ui.editorSeed = nil
             returnTo = seed?.returnTo
-            if let id = seed?.editId, let entry = history.entries.first(where: { $0.id == id }) {
+            if let id = seed?.editId, let entry = resolveEntry(id) {
                 editing = entry
                 draft = entry.draft
                 start = entry.start
@@ -108,6 +121,35 @@ struct ManualEntryView: View {
         }
         .onChange(of: start) { syncDuration() }
         .onChange(of: end) { syncDuration() }
+        .confirmationDialog("Delete this entry in Moxie?", isPresented: $confirmingDelete, titleVisibility: .visible) {
+            Button("Delete", role: .destructive) { Task { await deleteRemote() } }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This permanently removes it from Moxie. This can't be undone.")
+        }
+    }
+
+    /// `id` is either a local history id, or a "moxie-…" id for an entry Recent found only in Moxie
+    /// (via `MoxieEntriesCache`) and hasn't been logged here before.
+    private func resolveEntry(_ id: String) -> LoggedEntry? {
+        if let entry = history.entries.first(where: { $0.id == id }) { return entry }
+        guard let moxieId = id.hasPrefix("moxie-") ? String(id.dropFirst("moxie-".count)) : nil,
+              let remote = MoxieEntriesCache.shared.entry(moxieId: moxieId) else { return nil }
+        let start = remote.start ?? .now
+        let end = remote.end ?? start.addingTimeInterval(remote.duration)
+        return LoggedEntry(id: id, moxieId: remote.id, start: start, end: end, draft: remote.draft, moxieBillable: remote.billable, pending: nil)
+    }
+
+    private func deleteRemote() async {
+        guard let editing else { return }
+        isSaving = true
+        defer { isSaving = false }
+        do {
+            try await MoxieEntryEditing.delete(editing, history: history)
+            close()
+        } catch {
+            self.error = error.localizedDescription
+        }
     }
 
     private func dateRow(_ label: String, selection: Binding<Date>) -> some View {
@@ -139,13 +181,18 @@ struct ManualEntryView: View {
         Task {
             defer { isSaving = false }
             do {
-                if var entry = editing {
-                    guard end > start else { throw LogError.invalidRange }
-                    entry.start = start
-                    entry.end = end
-                    entry.draft = draft
-                    entry.sendError = nil
-                    history.update(entry)
+                guard end > start else { throw LogError.invalidRange }
+                if let editing {
+                    if editing.moxieId != nil {
+                        try await MoxieEntryEditing.edit(editing, start: start, end: end, draft: draft, history: history)
+                    } else {
+                        var entry = editing
+                        entry.start = start
+                        entry.end = end
+                        entry.draft = draft
+                        entry.sendError = nil
+                        history.update(entry)
+                    }
                 } else {
                     _ = try await timer.log(start: start, end: end, draft: draft)
                     if returnTo == nil { ui.tab = .recent }
