@@ -15,6 +15,7 @@ struct MoxieTimerApp: App {
                 .environment(model.focus)
                 .environment(model.history)
                 .environment(model.calls)
+                .environment(model.live)
         } label: {
             MenuBarLabel()
                 .environment(model.timer)

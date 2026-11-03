@@ -32,6 +32,8 @@ final class TimerStore {
     @ObservationIgnored private let settings: AppSettings
     @ObservationIgnored private let history: HistoryStore
     @ObservationIgnored private let storageKey = "timerState"
+    /// Mirrors this timer to Moxie's live timer when connected through MCP.
+    @ObservationIgnored var live: MoxieLiveTimer?
 
     init(settings: AppSettings, history: HistoryStore) {
         self.settings = settings
@@ -48,24 +50,54 @@ final class TimerStore {
     func start() {
         lastError = nil
         session = TimerSession(runningSince: .now)
+        live?.started(draft)
     }
 
     func toggle() {
-        guard var current = session else { return start() }
-        if current.isRunning { current.pause(at: .now) } else { current.resume(at: .now) }
-        session = current
+        guard let current = session else { return start() }
+        if current.isRunning { pause() } else { resume() }
     }
 
-    func pause() {
+    /// `mirror: false` when the change came from Moxie itself.
+    func pause(mirror: Bool = true) {
         guard var current = session, current.isRunning else { return }
         current.pause(at: .now)
         session = current
+        if mirror { live?.paused() }
     }
 
-    func resume() {
+    func resume(mirror: Bool = true) {
         guard var current = session, !current.isRunning else { return }
         current.resume(at: .now)
         session = current
+        if mirror { live?.resumed() }
+    }
+
+    /// Shows a timer that was started in Moxie (web app, phone, AI assistant).
+    func adopt(_ remote: MoxieTimeEntry) {
+        guard session == nil, let start = remote.start else { return }
+        let now = Date.now
+        let paused = remote.pausedSeconds ?? 0
+        var adopted = TimerSession()
+        if let pausedAt = remote.pausedAt.flatMap(MoxieMCP.parseDate) {
+            adopted.accumulated = max(0, pausedAt.timeIntervalSince(start) - paused)
+            adopted.pausedAt = pausedAt
+        } else {
+            adopted.accumulated = max(0, now.timeIntervalSince(start) - paused)
+            adopted.runningSince = now
+        }
+        draft = remote.draft
+        session = adopted
+        notice = "Picked up the timer running in Moxie."
+    }
+
+    /// Ends the local session without saving (it was already saved or discarded in Moxie).
+    func dropSession(notice: String) {
+        guard session != nil else { return }
+        session = nil
+        draft.notes = ""
+        draft.ticket = nil
+        self.notice = notice
     }
 
     func adjust(by delta: TimeInterval) {
@@ -89,6 +121,7 @@ final class TimerStore {
     }
 
     func discard() {
+        live?.discarded()
         session = nil
         lastError = nil
         draft.notes = ""
@@ -112,7 +145,9 @@ final class TimerStore {
         isSaving = true
         defer { isSaving = false }
         do {
-            _ = try await log(start: current.start(at: now), end: current.end(at: now), draft: draft)
+            if try await saveThroughLiveTimer(start: current.start(at: now), end: current.end(at: now)) == false {
+                _ = try await log(start: current.start(at: now), end: current.end(at: now), draft: draft)
+            }
             session = nil
             draft.notes = ""
             draft.ticket = nil
@@ -137,10 +172,30 @@ final class TimerStore {
             history.add(LoggedEntry(id: UUID().uuidString, moxieId: nil, start: start, end: end, draft: draft, pending: true))
         }
         session = nil
+        live?.discarded()
         draft.notes = ""
         draft.ticket = nil
         lastError = nil
         return held >= 60 ? held : 0
+    }
+
+    /// With Moxie's live timer running: stop it there (Moxie saves the entry) and correct its times/links.
+    /// In review mode the time is held here instead, so Moxie's copy is dropped. Returns false when the
+    /// usual save path should run.
+    private func saveThroughLiveTimer(start: Date, end: Date) async throws -> Bool {
+        guard let live, live.isActive, live.remoteActive else { return false }
+        if settings.holdForReview {
+            live.discarded()
+            return false
+        }
+        let start = Date(timeIntervalSince1970: start.timeIntervalSince1970.rounded(.down))
+        let end = Date(timeIntervalSince1970: end.timeIntervalSince1970.rounded(.down))
+        guard end > start else { throw LogError.invalidRange }
+        guard let saved = await live.stop(start: start, end: end, draft: draft) else { return false }
+        history.add(LoggedEntry(id: UUID().uuidString, moxieId: saved.entry.id, start: start, end: end, draft: draft,
+                                moxieBillable: saved.entry.billable, pending: nil))
+        notice = saved.warning
+        return true
     }
 
     // MARK: Logging

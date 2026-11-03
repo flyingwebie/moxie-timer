@@ -76,6 +76,7 @@ final class AppModel {
     let activity: ActivityWatcher
     let pet: PetStore
     let calls: CallDetector
+    let live = MoxieLiveTimer()
 
     private init() {
         settings = AppSettings()
@@ -92,6 +93,8 @@ final class AppModel {
         pet = PetStore(settings: settings, stats: stats, activity: activity, focus: focus, timer: timer, idle: idle, ai: ai,
                        voice: voice, library: petLines, skills: petSkills)
         calls = CallDetector(settings: settings)
+        timer.live = live
+        live.timer = timer
         let calls = calls
         focus.isInCall = { calls.inCall }
         activity.isInCall = { calls.inCall }
