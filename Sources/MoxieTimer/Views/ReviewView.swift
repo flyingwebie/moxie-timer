@@ -59,6 +59,18 @@ struct ReviewView: View {
 
             DayRecap()
 
+            if settings.holdForReview, AppModel.shared.live.isActive, !pending.isEmpty {
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill").font(.system(size: 11)).foregroundStyle(Theme.navy)
+                    Text("Moxie's live timer is on — send now, you can still edit times and categories in Recent.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.ink)
+                    Spacer(minLength: 4)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 9).fill(Theme.navy.opacity(0.07)))
+            }
+
             HStack {
                 Toggle("Show untracked gaps", isOn: $showGaps)
                     .toggleStyle(.switch).tint(Theme.navy).controlSize(.mini)

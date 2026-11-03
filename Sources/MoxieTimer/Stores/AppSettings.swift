@@ -8,8 +8,16 @@ final class AppSettings {
     /// Called when a window-related preference changes so the panel can re-apply them.
     @ObservationIgnored var onWindowPreferencesChange: (() -> Void)?
 
+    /// Test seam: when true, `apiKey` never touches the Keychain. A test binary has a different code
+    /// signature than the app, so the real Keychain item's ACL can pop a one-time system access prompt;
+    /// this keeps unit tests from ever reaching `Keychain.get`/`Keychain.set`.
+    @ObservationIgnored private let skipKeychain: Bool
+
     var apiKey: String {
-        didSet { Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey") }
+        didSet {
+            guard !skipKeychain else { return }
+            Keychain.set(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), for: "apiKey")
+        }
     }
 
     var userEmail: String {
@@ -173,8 +181,10 @@ final class AppSettings {
         }
     }
 
-    init() {
-        apiKey = Keychain.get("apiKey") ?? ""
+    /// `skipKeychainForTesting` is the seam above: pass `true` from tests only.
+    init(skipKeychainForTesting: Bool = false) {
+        skipKeychain = skipKeychainForTesting
+        apiKey = skipKeychainForTesting ? "" : (Keychain.get("apiKey") ?? "")
         userEmail = defaults.string(forKey: "userEmail") ?? ""
         baseURL = defaults.string(forKey: "apiBaseURL") ?? ""
         keepOnTop = defaults.object(forKey: "keepOnTop") as? Bool ?? true

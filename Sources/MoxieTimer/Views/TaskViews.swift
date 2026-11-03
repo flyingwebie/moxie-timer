@@ -5,6 +5,7 @@ struct TaskListView: View {
     @Environment(TaskInbox.self) private var inbox
     @Environment(FocusStore.self) private var focus
     @Environment(WidgetUI.self) private var ui
+    @Environment(MoxieLiveTimer.self) private var live
 
     @State private var query = ""
 
@@ -23,7 +24,7 @@ struct TaskListView: View {
                 if inbox.isLoading {
                     ProgressView().controlSize(.small)
                 } else {
-                    Button { Task { await inbox.refresh() } } label: { Image(systemName: "arrow.clockwise") }
+                    Button { Task { await inbox.refresh(mcp: live.isActive ? live.mcp : nil) } } label: { Image(systemName: "arrow.clockwise") }
                         .buttonStyle(.plain)
                         .foregroundStyle(Theme.muted)
                         .help("Reload from Moxie")
@@ -93,7 +94,7 @@ struct TaskListView: View {
             .frame(height: 400)
         }
         .padding(16)
-        .task { await inbox.refreshIfStale() }
+        .task { await inbox.refreshIfStale(mcp: live.isActive ? live.mcp : nil) }
     }
 
     private struct Group {
@@ -320,6 +321,7 @@ struct CaptureView: View {
 struct InboxFilterBar: View {
     @Environment(TaskInbox.self) private var inbox
     @Environment(Catalog.self) private var catalog
+    @Environment(MoxieLiveTimer.self) private var live
 
     var body: some View {
         HStack(spacing: 6) {
@@ -376,7 +378,7 @@ struct InboxFilterBar: View {
                         // Clients/projects/tickets caches are dropped so pickers reload them too.
                         catalog.reset()
                         await catalog.loadClients(force: true)
-                        await inbox.refresh()
+                        await inbox.refresh(mcp: live.isActive ? live.mcp : nil)
                     }
                 } label: {
                     Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.muted)

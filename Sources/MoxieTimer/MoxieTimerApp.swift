@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // Hide the break screen and prompts when a call starts; show a waiting break once it ends.
                 overlay?.sync()
                 if model.calls.inCall { prompt?.hide() }
+                model.callFollowUp.callStateChanged(inCall: model.calls.inCall)
             }
             model.activity.onPrompt = { [weak prompt] in
                 prompt?.hide()

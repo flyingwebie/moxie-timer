@@ -40,9 +40,13 @@ final class MCPAuth {
     private let clientIdKey = "mcpClientId"
     private var tokens: Tokens?
     private var refreshing: Task<Tokens, Error>?
+    /// Test seam: when true, never touches the Keychain (same reasoning as `AppSettings.skipKeychain`).
+    private let skipKeychain: Bool
 
-    init() {
-        tokens = Keychain.get(tokensAccount).flatMap { try? JSONDecoder().decode(Tokens.self, from: Data($0.utf8)) }
+    /// `skipKeychainForTesting` is the seam above: pass `true` from tests only.
+    init(skipKeychainForTesting: Bool = false) {
+        skipKeychain = skipKeychainForTesting
+        tokens = skipKeychainForTesting ? nil : Keychain.get(tokensAccount).flatMap { try? JSONDecoder().decode(Tokens.self, from: Data($0.utf8)) }
     }
 
     var isSignedIn: Bool { tokens != nil }
@@ -52,6 +56,7 @@ final class MCPAuth {
             Task { try? await self.revoke(token) }
         }
         tokens = nil
+        guard !skipKeychain else { return }
         Keychain.set(nil, for: tokensAccount)
     }
 

@@ -42,6 +42,11 @@ final class TaskInbox {
     /// "Up next" (ranking alone would bury a task with no due date) until they're focused or done.
     private(set) var justAdded: [String] = []
 
+    /// Moxie's own "needs attention" / "daily focus" signal, task or ticket id → short reason. Floats
+    /// matching items to the top of "Up next"; empty (and harmless) when MCP isn't active.
+    private(set) var moxieSignals: [String: String] = [:]
+    @ObservationIgnored private var signalsLoadedAt: Date?
+
     func clearJustAdded(_ id: String) {
         justAdded.removeAll { $0 == id }
     }
@@ -99,10 +104,18 @@ final class TaskInbox {
             if let project = filterProject, task.projectRef?.id != project.id { return false }
             return true
         }
-        let ranked = TaskInbox.ranked(filtered, now: .now)
+        let ranked = TaskInbox.ranked(filtered, now: .now) { self.isFlagged($0) }
         guard !justAdded.isEmpty else { return ranked }
         let pinned = justAdded.compactMap { id in ranked.first { $0.id == id } }
         return pinned + ranked.filter { !justAdded.contains($0.id) }
+    }
+
+    /// Whether Moxie itself flagged this task/ticket (daily focus or needs-attention).
+    func isFlagged(_ task: MoxieTask) -> Bool { moxieReason(for: task) != nil }
+
+    /// The short reason Moxie flagged this item, if any, for a subtle badge on its row.
+    func moxieReason(for task: MoxieTask) -> String? {
+        moxieSignals[task.id] ?? task.sourceTicketId.flatMap { moxieSignals[$0] }
     }
 
     /// Whether a task would show under the current client/project filter.
@@ -122,12 +135,17 @@ final class TaskInbox {
         }
     }
 
-    func refreshIfStale() async {
-        if let lastLoaded, Date.now.timeIntervalSince(lastLoaded) < 300, !tasks.isEmpty { return }
-        await refresh()
+    /// `mcp` is the live MCP client when connected (pass nil when it isn't); it's used only for Moxie's
+    /// own urgency signals, cached separately, so a slow/unavailable MCP never blocks the task list.
+    func refreshIfStale(mcp: MoxieMCP? = nil) async {
+        if let lastLoaded, Date.now.timeIntervalSince(lastLoaded) < 300, !tasks.isEmpty {
+            await refreshSignalsIfStale(mcp: mcp)
+            return
+        }
+        await refresh(mcp: mcp)
     }
 
-    func refresh() async {
+    func refresh(mcp: MoxieMCP? = nil) async {
         guard let api = settings.makeAPI() else {
             lastError = LogError.notConfigured.localizedDescription
             return
@@ -159,6 +177,23 @@ final class TaskInbox {
             lastError = nil
         } catch {
             lastError = error.localizedDescription
+        }
+        await refreshSignalsIfStale(mcp: mcp)
+    }
+
+    /// Refreshes Moxie's urgency signals at most every 10 minutes; failures are silent (ranking just
+    /// falls back to local rules, same as when MCP isn't active at all).
+    private func refreshSignalsIfStale(mcp: MoxieMCP?) async {
+        guard let mcp else { return }
+        if let signalsLoadedAt, Date.now.timeIntervalSince(signalsLoadedAt) < 600 { return }
+        do {
+            let signals = try await mcp.urgencySignals()
+            var map: [String: String] = [:]
+            for signal in signals where map[signal.id] == nil { map[signal.id] = signal.reason }
+            moxieSignals = map
+            signalsLoadedAt = .now
+        } catch {
+            // Best-effort only: don't surface this as a user-facing error.
         }
     }
 
@@ -236,8 +271,11 @@ final class TaskInbox {
     // MARK: Ranking
 
     /// Rule-based priority: overdue and due-soon first, then priority, then how long it's been waiting.
-    static func score(_ task: MoxieTask, now: Date) -> Double {
+    /// A task Moxie itself flagged (daily focus / needs attention) floats above everything else; the
+    /// rest of the score still breaks ties between several flagged items.
+    static func score(_ task: MoxieTask, now: Date, flagged: Bool = false) -> Double {
         var score = Double(task.priorityRank) * 15
+        if flagged { score += 500 }
         if let due = task.due {
             let days = Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: now), to: due).day ?? 0
             switch days {
@@ -254,8 +292,8 @@ final class TaskInbox {
         return score
     }
 
-    static func ranked(_ tasks: [MoxieTask], now: Date) -> [MoxieTask] {
-        tasks.map { ($0, score($0, now: now)) }
+    static func ranked(_ tasks: [MoxieTask], now: Date, flagged: (MoxieTask) -> Bool = { _ in false }) -> [MoxieTask] {
+        tasks.map { ($0, score($0, now: now, flagged: flagged($0))) }
             .sorted { $0.1 != $1.1 ? $0.1 > $1.1 : $0.0.name < $1.0.name }
             .map(\.0)
     }

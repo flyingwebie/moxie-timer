@@ -22,8 +22,8 @@ final class TimerStore {
         var session: TimerSession?
     }
 
-    var draft = EntryDraft() { didSet { persist() } }
-    private(set) var session: TimerSession? { didSet { persist() } }
+    var draft = EntryDraft() { didSet { persist(); onChange?() } }
+    private(set) var session: TimerSession? { didSet { persist(); onChange?() } }
     private(set) var isSaving = false
     var lastError: String?
     /// Non-fatal information about the last save (e.g. Moxie ignored the billable setting).
@@ -34,6 +34,8 @@ final class TimerStore {
     @ObservationIgnored private let storageKey = "timerState"
     /// Mirrors this timer to Moxie's live timer when connected through MCP.
     @ObservationIgnored var live: MoxieLiveTimer?
+    /// Called after the draft or session changes, so Focus can follow what the timer is tracking.
+    @ObservationIgnored var onChange: (() -> Void)?
 
     init(settings: AppSettings, history: HistoryStore) {
         self.settings = settings
@@ -49,6 +51,7 @@ final class TimerStore {
 
     func start() {
         lastError = nil
+        live?.clearPendingOffer()
         session = TimerSession(runningSince: .now)
         live?.started(draft)
     }

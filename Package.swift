@@ -8,6 +8,11 @@ let package = Package(
         .executableTarget(
             name: "MoxieTimer",
             path: "Sources/MoxieTimer"
+        ),
+        .testTarget(
+            name: "MoxieTimerTests",
+            dependencies: ["MoxieTimer"],
+            path: "Tests/MoxieTimerTests"
         )
     ]
 )

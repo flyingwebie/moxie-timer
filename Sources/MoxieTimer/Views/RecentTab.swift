@@ -11,6 +11,47 @@ struct RecentTab: View {
     @State private var weekOffset = 0
     /// Narrow the list to one day of the shown week (click a bar).
     @State private var selectedDay: Date?
+    /// A sent entry (local or Moxie-only) the user asked to permanently delete in Moxie.
+    @State private var deleteConfirmEntry: LoggedEntry?
+    @State private var remoteActionError: String?
+
+    private var live: MoxieLiveTimer { AppModel.shared.live }
+
+    /// Entries Moxie knows about for this week that aren't logged locally, marked "from Moxie" below.
+    private var remoteOnly: [LoggedEntry] {
+        guard live.isActive else { return [] }
+        let known = Set(history.entries.compactMap(\.moxieId))
+        return MoxieEntriesCache.shared.reconciled(in: weekInterval, knownMoxieIds: known)
+    }
+
+    private struct DisplayRow: Identifiable {
+        let entry: LoggedEntry
+        let fromMoxie: Bool
+        var id: String { entry.id }
+    }
+
+    private struct DisplayDay: Identifiable {
+        let day: Date
+        let rows: [DisplayRow]
+        let total: TimeInterval
+        var id: Date { day }
+    }
+
+    /// Local entries plus Moxie-only ones, grouped and sorted together, newest day first.
+    private func displayGroups(in interval: DateInterval) -> [DisplayDay] {
+        let calendar = Calendar.current
+        var byDay: [Date: [DisplayRow]] = [:]
+        for entry in history.entries(in: interval) {
+            byDay[calendar.startOfDay(for: entry.start), default: []].append(DisplayRow(entry: entry, fromMoxie: false))
+        }
+        for entry in remoteOnly {
+            byDay[calendar.startOfDay(for: entry.start), default: []].append(DisplayRow(entry: entry, fromMoxie: true))
+        }
+        return byDay.keys.sorted(by: >).map { day in
+            let rows = byDay[day]!.sorted { $0.entry.start > $1.entry.start }
+            return DisplayDay(day: day, rows: rows, total: rows.reduce(0) { $0 + $1.entry.duration })
+        }
+    }
 
     private var weekInterval: DateInterval {
         let calendar = Calendar.current
@@ -38,7 +79,7 @@ struct RecentTab: View {
     var body: some View {
         let interval = weekInterval
         let weekTotal = history.total(in: interval)
-        let groups = history.groupedByDay(in: interval).filter { group in
+        let groups = displayGroups(in: interval).filter { group in
             selectedDay.map { Calendar.current.isDate(group.day, inSameDayAs: $0) } ?? true
         }
         let daysWithTime = Set(history.entries(in: interval).map { Calendar.current.startOfDay(for: $0.start) }).count
@@ -88,8 +129,11 @@ struct RecentTab: View {
                     LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                         ForEach(groups) { group in
                             Section {
-                                ForEach(group.entries) { entry in
-                                    EntryRow(entry: entry, canStart: timer.session == nil, isOpen: openEntry == entry.id, onToggle: {
+                                ForEach(group.rows) { row in
+                                    let entry = row.entry
+                                    EntryRow(entry: entry, canStart: timer.session == nil, fromMoxie: row.fromMoxie,
+                                             canEditRemote: live.isActive && entry.moxieId != nil,
+                                             isOpen: openEntry == entry.id, onToggle: {
                                         withAnimation(.easeOut(duration: 0.15)) { openEntry = openEntry == entry.id ? nil : entry.id }
                                     }, onReview: { ui.route = .review }) {
                                         timer.startAgain(from: entry)
@@ -99,6 +143,8 @@ struct RecentTab: View {
                                     } onEdit: {
                                         ui.editorSeed = .init(editId: entry.id)
                                         ui.route = .addEntry
+                                    } onDeleteInMoxie: {
+                                        deleteConfirmEntry = entry
                                     }
                                 }
                             } header: {
@@ -119,12 +165,37 @@ struct RecentTab: View {
                 .frame(height: 300)
             }
 
-            Text("Click an entry for its details, or a day in the chart to show only that day. Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
+            if let remoteActionError {
+                ErrorBanner(message: remoteActionError) { self.remoteActionError = nil }
+            }
+
+            Text(live.isActive
+                 ? "Click an entry for its details, or a day in the chart to show only that day. Entries marked “from Moxie” were logged elsewhere. Held entries can be edited in Review; a sent entry can be edited or deleted here while Moxie's live timer is on."
+                 : "Click an entry for its details, or a day in the chart to show only that day. Shows entries logged from this Mac. Held entries can be edited in Review; the Moxie API can't edit entries once sent.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
+        .task(id: interval) { await MoxieEntriesCache.shared.refresh(interval) }
+        .confirmationDialog("Delete this entry in Moxie?", isPresented: .init(get: { deleteConfirmEntry != nil }, set: { if !$0 { deleteConfirmEntry = nil } }), titleVisibility: .visible) {
+            Button("Delete", role: .destructive) {
+                guard let entry = deleteConfirmEntry else { return }
+                deleteConfirmEntry = nil
+                Task { await deleteInMoxie(entry) }
+            }
+            Button("Cancel", role: .cancel) { deleteConfirmEntry = nil }
+        } message: {
+            Text("This permanently removes it from Moxie. This can't be undone.")
+        }
+    }
+
+    private func deleteInMoxie(_ entry: LoggedEntry) async {
+        do {
+            try await MoxieEntryEditing.delete(entry, history: history)
+        } catch {
+            remoteActionError = error.localizedDescription
+        }
     }
 
     private var weekNavigator: some View {
@@ -199,12 +270,17 @@ struct RecentTab: View {
 private struct EntryRow: View {
     let entry: LoggedEntry
     let canStart: Bool
+    /// Logged elsewhere (web app, another Mac, an AI assistant) — not in this Mac's local history.
+    var fromMoxie: Bool = false
+    /// Moxie's live timer is on and this entry has a `moxieId`, so it can be edited/deleted in Moxie.
+    var canEditRemote: Bool = false
     let isOpen: Bool
     let onToggle: () -> Void
     let onReview: () -> Void
     let onStart: () -> Void
     let onRemove: () -> Void
     var onEdit: (() -> Void)? = nil
+    var onDeleteInMoxie: (() -> Void)? = nil
 
     @State private var hovering = false
 
@@ -218,9 +294,16 @@ private struct EntryRow: View {
             Button("Start timer for this", action: onStart).disabled(!canStart)
             if entry.isPending, let onEdit {
                 Button("Edit held entry…", action: onEdit)
+            } else if canEditRemote, let onEdit {
+                Button("Edit in Moxie…", action: onEdit)
             }
-            Divider()
-            Button("Remove from this list", role: .destructive, action: onRemove)
+            if canEditRemote, let onDeleteInMoxie {
+                Button("Delete in Moxie…", role: .destructive, action: onDeleteInMoxie)
+            }
+            if !fromMoxie {
+                Divider()
+                Button("Remove from this list", role: .destructive, action: onRemove)
+            }
         }
     }
 
@@ -228,10 +311,20 @@ private struct EntryRow: View {
         HStack(alignment: .top, spacing: 10) {
             ClientAvatar(name: entry.draft.client?.name ?? "?", size: 30)
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.draft.client?.name ?? "No client yet")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
+                HStack(spacing: 5) {
+                    Text(entry.draft.client?.name ?? "No client yet")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    if fromMoxie {
+                        Text("FROM MOXIE")
+                            .font(.system(size: 8, weight: .bold))
+                            .tracking(0.3)
+                            .foregroundStyle(Theme.navy)
+                            .padding(.horizontal, 5).padding(.vertical, 1.5)
+                            .background(Capsule().fill(Theme.navy.opacity(0.1)))
+                    }
+                }
                 Text(detail)
                     .font(.system(size: 12))
                     .foregroundStyle(Theme.ink.opacity(0.7))
@@ -294,6 +387,9 @@ private struct EntryRow: View {
                 if entry.isPending {
                     if let onEdit { Button("Edit", action: onEdit).buttonStyle(ChipButtonStyle()) }
                     Button("Review", action: onReview).buttonStyle(ChipButtonStyle())
+                } else if canEditRemote, let onEdit {
+                    Button("Edit", action: onEdit).buttonStyle(ChipButtonStyle())
+                        .help("Edit this entry in Moxie. Already-invoiced entries can't be changed.")
                 }
                 if !notes.isEmpty {
                     Button("Copy notes") {
@@ -303,10 +399,17 @@ private struct EntryRow: View {
                     .buttonStyle(ChipButtonStyle())
                 }
                 Spacer()
-                Button(role: .destructive, action: onRemove) { Image(systemName: "trash") }
-                    .buttonStyle(.plain)
-                    .foregroundStyle(Theme.danger)
-                    .help("Remove from this list (doesn't delete it in Moxie)")
+                if canEditRemote, let onDeleteInMoxie {
+                    Button(role: .destructive, action: onDeleteInMoxie) { Image(systemName: "trash") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.danger)
+                        .help("Permanently delete this entry in Moxie. Can't be undone.")
+                } else if !fromMoxie {
+                    Button(role: .destructive, action: onRemove) { Image(systemName: "trash") }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Theme.danger)
+                        .help("Remove from this list (doesn't delete it in Moxie)")
+                }
             }
             .controlSize(.small)
             .padding(.top, 4)

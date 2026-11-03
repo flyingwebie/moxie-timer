@@ -9,13 +9,19 @@ struct FocusTab: View {
     @Environment(TimerStore.self) private var timer
     @Environment(Clock.self) private var clock
     @Environment(WidgetUI.self) private var ui
+    @Environment(MoxieLiveTimer.self) private var live
 
     @State private var isPicking = false
     @State private var isSuggesting = false
+    @State private var isAddingChecklist = false
+    @State private var checklistAddedFor: String?
     @State private var chosenMinutes: Int?
+    /// Picking other work while time is running (the running time is saved before switching).
+    @State private var isSwitching = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        @Bindable var focusBindable = focus
+        return VStack(alignment: .leading, spacing: 14) {
             if let banner = focus.banner {
                 CelebrationBanner(message: banner) { focus.banner = nil }
             }
@@ -23,8 +29,12 @@ struct FocusTab: View {
                 ErrorBanner(message: error) { focus.lastError = nil }
             }
 
-            if let block = focus.block, block.isWorking, let target = focus.target {
+            if isSwitching {
+                switchView
+            } else if let block = focus.block, block.isWorking, let target = focus.target {
                 activeView(block: block, target: target)
+            } else if let session = timer.session {
+                trackingView(session: session)
             } else if let target = focus.target {
                 readyView(target: target)
             } else {
@@ -32,7 +42,149 @@ struct FocusTab: View {
             }
         }
         .padding(16)
-        .task { await inbox.refreshIfStale() }
+        .task { await inbox.refreshIfStale(mcp: live.isActive ? live.mcp : nil) }
+        .onChange(of: focus.target) { isSwitching = false }
+        .sheet(item: $focusBindable.pendingTicketNote) { draft in
+            TicketNoteSheet(draft: draft)
+        }
+    }
+
+    // MARK: Switch
+
+    private var switchView: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                VStack(alignment: .leading, spacing: 3) {
+                    CapsLabel("Switch to")
+                    if timer.session != nil {
+                        Text(timer.canSaveCurrent
+                             ? "The running time is saved on “\(focus.target?.name ?? "current work")” first."
+                             : "The running time has no client yet — it moves to Review first.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(Theme.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Spacer()
+                Button("Back") { isSwitching = false }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Theme.navy)
+            }
+            QuickStartComposer()
+            upNext
+        }
+    }
+
+    // MARK: Tracking (timer running, no focus block)
+
+    /// Mirrors the Timer tab: same work, same clock, same stop & save.
+    private func trackingView(session: TimerSession) -> some View {
+        let now = clock.now
+        let draft = timer.draft
+        let target = focus.target
+        let name = target?.name ?? "Current work"
+
+        return VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    CapsLabel(session.isRunning ? "Now tracking" : "Paused")
+                    Spacer()
+                    Button("Change") { isSwitching = true }
+                        .buttonStyle(.plain)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Theme.navy)
+                        .help("Switch to another task — the running time is saved first")
+                }
+                Text(name)
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 6) {
+                    let context = [draft.client?.name, draft.project?.name].compactMap { $0 }.joined(separator: " · ")
+                    if !context.isEmpty {
+                        Text(context).font(.system(size: 12)).foregroundStyle(Theme.muted).lineLimit(1)
+                    }
+                    if let due = target?.due.flatMap({ MoxieTask.dayFormatter.date(from: String($0.prefix(10))) }) {
+                        DueBadge(date: due)
+                    }
+                    KindBadge(isTicket: draft.ticket != nil, isOwn: draft.task == nil && draft.ticket == nil)
+                }
+                if let ticket = draft.ticket, ticket.name != name {
+                    Label(ticket.name, systemImage: "ticket")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.muted)
+                        .lineLimit(1)
+                }
+            }
+
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(DurationFormat.clock(session.elapsed(at: now)))
+                        .font(.system(size: 30, weight: .bold).monospacedDigit())
+                        .foregroundStyle(Theme.ink)
+                    let start = session.start(at: now)
+                    Text("Started at \(start.formatted(date: .omitted, time: .shortened)) · \(start.relativeDayName)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.muted)
+                }
+                Spacer()
+                CircleIconButton(
+                    systemName: session.isRunning ? "pause.fill" : "play.fill",
+                    size: 40,
+                    help: session.isRunning ? "Pause" : "Resume"
+                ) { timer.toggle() }
+            }
+
+            if draft.client == nil {
+                Label(timer.canSaveCurrent
+                      ? "No client yet — you can set it in the end-of-day review."
+                      : "No client yet — set it in the Timer tab before the time is saved.",
+                      systemImage: "exclamationmark.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.onBreak)
+            }
+            if let error = timer.lastError {
+                ErrorBanner(message: error) { timer.lastError = nil }
+            }
+
+            Button { focus.startFromTimer() } label: {
+                Label("Focus on this · \(focus.suggestedMinutes) min block", systemImage: "scope").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(ChipButtonStyle())
+            .help("Turn this timer into a focus block with a countdown and a break at the end")
+
+            Button { Task { await focus.saveForLater() } } label: {
+                HStack(spacing: 8) {
+                    if timer.isSaving {
+                        ProgressView().controlSize(.small).tint(.white)
+                    } else {
+                        Image(systemName: "stop.fill").font(.system(size: 10))
+                    }
+                    Text(timer.isSaving ? "Saving…" : "Stop & save entry")
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(timer.isSaving || focus.isFinishing)
+            .help("Save the time and keep this as Up next")
+
+            HStack(spacing: 8) {
+                Button { ui.tab = .timer } label: {
+                    Label("Edit in Timer", systemImage: "slider.horizontal.3").lineLimit(1).frame(maxWidth: .infinity)
+                }
+                .buttonStyle(ChipButtonStyle())
+                .help("Change client, project, task, ticket, notes or the start time")
+                if let target {
+                    Button { Task { await finish(target) } } label: {
+                        Label(doneTitle(target), systemImage: "checkmark.circle").lineLimit(1).frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                    .disabled(focus.isFinishing || timer.isSaving)
+                    .help(doneHelp(target))
+                }
+            }
+        }
     }
 
     // MARK: Choose
@@ -114,7 +266,7 @@ struct FocusTab: View {
             } else {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(rows) { task in
-                        TaskRow(task: task, isNew: inbox.justAdded.contains(task.id)) { Task { await focus.select(task) } }
+                        TaskRow(task: task, isNew: inbox.justAdded.contains(task.id)) { Task { await focus.select(task); isSwitching = false } }
                     }
                 }
                 Button { ui.route = .tasks } label: {
@@ -135,7 +287,7 @@ struct FocusTab: View {
     private func pickForMe() async {
         isPicking = true
         defer { isPicking = false }
-        if inbox.tasks.isEmpty { await inbox.refresh() }
+        if inbox.tasks.isEmpty { await inbox.refresh(mcp: live.isActive ? live.mcp : nil) }
         let candidates = Array(inbox.visibleTasks.prefix(12))
         guard let fallback = candidates.first else {
             // A load error is already shown under the list; only explain the empty case here.
@@ -143,7 +295,8 @@ struct FocusTab: View {
             return
         }
         var chosen = fallback
-        var reason = "Most urgent by due date and priority."
+        // The rules fallback already ranks Moxie-flagged items first (TaskInbox.score); say so when that's why it won.
+        var reason = inbox.moxieReason(for: fallback) ?? "Most urgent by due date and priority."
         if ai.hasEnabledEngine, candidates.count > 1 {
             do {
                 let pick = try await ai.pick(from: candidates.map(describe))
@@ -164,6 +317,7 @@ struct FocusTab: View {
         if let due = task.due { parts.append("due \(due.formatted(date: .abbreviated, time: .omitted))") }
         if let priority = task.taskPriority { parts.append("priority \(priority)") }
         if task.isTicket { parts.append("client support ticket") }
+        if let reason = inbox.moxieReason(for: task) { parts.append("Moxie flagged this: \(reason)") }
         return parts.joined(separator: " — ")
     }
 
@@ -226,6 +380,22 @@ struct FocusTab: View {
                     .disabled(isSuggesting || !ai.hasEnabledEngine)
                     .help("Suggest a first step with AI")
                 }
+                if let taskId = target.taskId, live.isActive {
+                    Button { Task { await addFirstStepToChecklist(taskId: taskId, step: target.firstStep) } } label: {
+                        HStack(spacing: 6) {
+                            if isAddingChecklist {
+                                ProgressView().controlSize(.mini)
+                            } else {
+                                Image(systemName: checklistAddedFor == taskId ? "checkmark.circle.fill" : "checklist")
+                            }
+                            Text(checklistAddedFor == taskId ? "Added to Moxie checklist" : "Add to checklist in Moxie")
+                        }
+                    }
+                    .buttonStyle(ChipButtonStyle())
+                    .disabled(isAddingChecklist || checklistAddedFor == taskId
+                              || target.firstStep.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .help("Appends this as a new item on the task's checklist in Moxie, keeping any existing items")
+                }
             }
 
             VStack(alignment: .leading, spacing: 8) {
@@ -272,7 +442,7 @@ struct FocusTab: View {
             .buttonStyle(PrimaryButtonStyle())
             .keyboardShortcut(.defaultAction)
 
-            Button { Task { await focus.finish(closeInMoxie: closesInMoxie(target)) } } label: {
+            Button { Task { await finish(target) } } label: {
                 Label(doneTitle(target), systemImage: "checkmark.circle").frame(maxWidth: .infinity)
             }
             .buttonStyle(ChipButtonStyle())
@@ -309,6 +479,48 @@ struct FocusTab: View {
         } catch {
             focus.lastError = error.localizedDescription
         }
+    }
+
+    /// Appends the tiny first step to the Moxie task's checklist, keeping every item already there.
+    private func addFirstStepToChecklist(taskId: String, step: String) async {
+        guard live.isActive else { return }
+        isAddingChecklist = true
+        defer { isAddingChecklist = false }
+        do {
+            try await live.mcp.appendChecklistItem(taskId: taskId, text: step)
+            checklistAddedFor = taskId
+        } catch {
+            focus.lastError = error.localizedDescription
+        }
+    }
+
+    /// Wraps `FocusStore.finish`: on a ticket with MCP active, drafts a private "what I did" note
+    /// afterward (never posted without an explicit tap in its sheet).
+    private func finish(_ target: FocusTarget) async {
+        let ticketId = target.ticketId
+        let firstStep = target.firstStep
+        let notes = timer.draft.notes
+        let duration = timer.session?.elapsed(at: .now) ?? 0
+        await focus.finish(closeInMoxie: closesInMoxie(target))
+        guard let ticketId, live.isActive, focus.lastError == nil else { return }
+        let text = await ticketNoteDraft(ticket: target.name, firstStep: firstStep, notes: notes, duration: duration)
+        focus.pendingTicketNote = TicketNoteDraft(ticketId: ticketId, ticketName: target.name, text: text)
+    }
+
+    /// AI-drafted note when an engine is enabled, otherwise a plain template — either way the user
+    /// edits and confirms it in `TicketNoteSheet` before anything is posted.
+    private func ticketNoteDraft(ticket: String, firstStep: String, notes: String, duration: TimeInterval) async -> String {
+        if ai.hasEnabledEngine,
+           let generated = try? await ai.ticketNote(ticket: ticket, firstStep: firstStep, notes: notes, duration: duration),
+           !generated.isEmpty {
+            return generated
+        }
+        var parts = ["Worked on this for \(DurationFormat.short(duration))."]
+        let trimmedStep = firstStep.trimmingCharacters(in: .whitespaces)
+        if !trimmedStep.isEmpty { parts.append("First step: \(trimmedStep).") }
+        let trimmedNotes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedNotes.isEmpty { parts.append(trimmedNotes) }
+        return parts.joined(separator: " ")
     }
 
     // MARK: Active
@@ -370,15 +582,18 @@ struct FocusTab: View {
                     .buttonStyle(ChipButtonStyle())
                     .help("Stop focusing; the time stays in the Timer tab")
                 Spacer()
+                Button("Switch task") { isSwitching = true }
+                    .buttonStyle(ChipButtonStyle())
+                    .help("Work on something else — the time so far is saved first")
             }
 
             HStack(spacing: 8) {
                 Button { Task { await focus.saveForLater() } } label: {
-                    Text("Save, continue later").lineLimit(1).frame(maxWidth: .infinity)
+                    Label("Stop & save", systemImage: "stop.fill").lineLimit(1).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(ChipButtonStyle())
                 .help("Save the time and keep this as Up next")
-                Button { Task { await focus.finish(closeInMoxie: closesInMoxie(target)) } } label: {
+                Button { Task { await finish(target) } } label: {
                     Label(doneTitle(target), systemImage: "checkmark").lineLimit(1).frame(maxWidth: .infinity)
                 }
                 .buttonStyle(PrimaryButtonStyle())
@@ -397,10 +612,13 @@ struct TaskRow: View {
     var isNew = false
     let action: () -> Void
     @Environment(FocusStore.self) private var focus
+    @Environment(TaskInbox.self) private var inbox
+    @Environment(MoxieLiveTimer.self) private var live
     @State private var hovering = false
     /// Ticked but not yet sent: Moxie is only updated after a short undo window, like Todoist.
     @State private var checked = false
     @State private var pending: Task<Void, Never>?
+    @State private var showMakeTask = false
 
     static let undoWindow: Duration = .seconds(2.5)
 
@@ -435,6 +653,13 @@ struct TaskRow: View {
                             if !context.isEmpty {
                                 Text(context).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
                             }
+                            if let reason = inbox.moxieReason(for: task) {
+                                Label(reason, systemImage: "sparkles")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(Theme.navy.opacity(0.8))
+                                    .lineLimit(1)
+                                    .help("Moxie flagged this as needing attention")
+                            }
                         }
                         .opacity(checked ? 0.5 : 1)
                     }
@@ -463,6 +688,16 @@ struct TaskRow: View {
         .background(RoundedRectangle(cornerRadius: 6).fill(Theme.cream.opacity(hovering && !checked ? 1 : 0)))
         .animation(.easeOut(duration: 0.15), value: checked)
         .onHover { hovering = $0 }
+        .contextMenu {
+            if task.isTicket, live.isActive {
+                Button { showMakeTask = true } label: {
+                    Label("Make a task from this ticket", systemImage: "checklist")
+                }
+            }
+        }
+        .sheet(isPresented: $showMakeTask) {
+            MakeTaskFromTicketSheet(ticket: task)
+        }
     }
 
     /// Tick: celebrate now, send to Moxie after the undo window. Tick again (or click the row) to undo.
