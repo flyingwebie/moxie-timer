@@ -6,6 +6,7 @@ struct WidgetRoot: View {
     @Environment(WidgetUI.self) private var ui
     @Environment(ActivityWatcher.self) private var activity
     @Environment(AppSettings.self) private var rootSettings
+    @Environment(FocusStore.self) private var rootFocus
 
     var body: some View {
         VStack(alignment: .trailing, spacing: 8) {
@@ -23,6 +24,8 @@ struct WidgetRoot: View {
         // Room for the drop shadows inside the transparent window.
         .padding(EdgeInsets(top: 6, leading: 18, bottom: 22, trailing: 10))
         .fixedSize()
+        // Something got done: confetti over the widget (drawn inside it, never resizes it).
+        .overlay { ConfettiView(trigger: rootFocus.celebrations) }
         .onGeometryChange(for: CGSize.self, of: \.size) { onSize($0) }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
     }

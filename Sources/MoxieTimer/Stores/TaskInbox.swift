@@ -74,19 +74,22 @@ final class TaskInbox {
 
     /// Tickets shaped as inbox items so they rank and display like tasks.
     private var ticketItems: [MoxieTask] {
-        tickets.filter { $0.open != false }.map { ticket in
-            let clientId = ticket.clientId ?? ticket.client?.id
-            let clientName = ticket.client?.name ?? catalog.clients.first { $0.id == clientId }?.name
-            return MoxieTask(
-                id: "ticket:\(ticket.id)", name: ticket.title, projectId: nil, status: ticket.status, parentTaskId: nil,
-                clientId: clientId,
-                client: clientId.map { MoxieTask.Micro(id: $0, name: clientName) },
-                assignedToList: ticket.assignedTo,
-                dueDate: ticket.dueDate,
-                created: ticket.created,
-                sourceTicketId: ticket.id
-            )
-        }
+        tickets.filter { $0.open != false }.map(item(for:))
+    }
+
+    /// A ticket shaped as an inbox item, so it can be ranked, shown and focused like a task.
+    func item(for ticket: MoxieTicket) -> MoxieTask {
+        let clientId = ticket.clientId ?? ticket.client?.id
+        let clientName = ticket.client?.name ?? catalog.clients.first { $0.id == clientId }?.name
+        return MoxieTask(
+            id: "ticket:\(ticket.id)", name: ticket.title, projectId: nil, status: ticket.status, parentTaskId: nil,
+            clientId: clientId,
+            client: clientId.map { MoxieTask.Micro(id: $0, name: clientName) },
+            assignedToList: ticket.assignedTo,
+            dueDate: ticket.dueDate,
+            created: ticket.created,
+            sourceTicketId: ticket.id
+        )
     }
 
     /// Tasks after the "only mine" filter, best candidates first.

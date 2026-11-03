@@ -122,6 +122,27 @@ final class TimerStore {
         }
     }
 
+    /// Moves the current time into Review as a held entry (not sent) and clears the timer, so it can't
+    /// leak onto the next task. Used when switching work before a client is picked. Returns the held time.
+    @discardableResult
+    func holdCurrent() -> TimeInterval {
+        guard var current = session else { return 0 }
+        let now = Date.now
+        current.pause(at: now)
+        let start = Date(timeIntervalSince1970: current.start(at: now).timeIntervalSince1970.rounded(.down))
+        let end = Date(timeIntervalSince1970: current.end(at: now).timeIntervalSince1970.rounded(.down))
+        let held = end.timeIntervalSince(start)
+        // Under a minute is noise, not worth a Review row.
+        if held >= 60 {
+            history.add(LoggedEntry(id: UUID().uuidString, moxieId: nil, start: start, end: end, draft: draft, pending: true))
+        }
+        session = nil
+        draft.notes = ""
+        draft.ticket = nil
+        lastError = nil
+        return held >= 60 ? held : 0
+    }
+
     // MARK: Logging
 
     /// Whether the running time can be stopped now. In review mode the client/project can be chosen later.

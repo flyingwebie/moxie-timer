@@ -29,6 +29,7 @@ enum DueChoice: Int, CaseIterable, Identifiable {
 
 /// The Focus home's main action: name the work, link it to a client/project on the fly, and start.
 /// Enter = add to Moxie and focus now. "Later" adds it to Up next. "Just focus" skips Moxie entirely.
+/// With a ticket picked, nothing new is created: you focus on that ticket and the text becomes the note.
 struct QuickStartComposer: View {
     @Environment(TaskInbox.self) private var inbox
     @Environment(FocusStore.self) private var focus
@@ -38,6 +39,7 @@ struct QuickStartComposer: View {
     @State private var name = ""
     @State private var client: Ref?
     @State private var project: Ref?
+    @State private var ticket: MoxieTicket?
     @State private var due: DueChoice = .none
     @State private var saving: Kind?
     @State private var error: String?
@@ -47,7 +49,8 @@ struct QuickStartComposer: View {
     private enum Kind { case focus, later, freeform }
 
     private var trimmed: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canSave: Bool { !trimmed.isEmpty && saving == nil }
+    private var canSave: Bool { (!trimmed.isEmpty || ticket != nil) && saving == nil }
+    private var canCreate: Bool { !trimmed.isEmpty && ticket == nil && saving == nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -57,7 +60,7 @@ struct QuickStartComposer: View {
                     .foregroundStyle(fieldFocused ? .white : Theme.navy)
                     .frame(width: 24, height: 24)
                     .background(Circle().fill(fieldFocused ? Theme.navy : Theme.navy.opacity(0.08)))
-                TextField("What are you working on?", text: $name)
+                TextField(ticket == nil ? "What are you working on?" : "What are you doing on this ticket? (optional)", text: $name)
                     .textFieldStyle(.plain)
                     .font(.system(size: 15, weight: .medium))
                     .focused($fieldFocused)
@@ -70,14 +73,19 @@ struct QuickStartComposer: View {
                 SearchChip(
                     icon: "person.2.fill", placeholder: "Client",
                     selection: client?.name, items: catalog.clients, title: \.name,
-                    isLoading: catalog.isLoading("clients"), maxWidth: 150,
+                    isLoading: catalog.isLoading("clients"), maxWidth: 130,
                     onOpen: { await catalog.loadClients() },
                     onRefresh: { await catalog.loadClients(force: true) },
                     onSelect: { picked in
                         let ref = picked.map { Ref(id: $0.id, name: $0.name) }
-                        if ref?.id != client?.id { project = nil }
+                        if ref?.id != client?.id { project = nil; ticket = nil }
                         client = ref
-                        if let ref { Task { await catalog.loadProjects(for: ref) } }
+                        if let ref {
+                            Task {
+                                await catalog.loadProjects(for: ref)
+                                await catalog.loadTickets(for: ref)
+                            }
+                        }
                     }
                 )
                 SearchChip(
@@ -86,13 +94,25 @@ struct QuickStartComposer: View {
                     items: client.flatMap { catalog.projectsByClient[$0.id] } ?? [], title: \.name,
                     badge: { $0.isActive ? nil : "Completed" },
                     isLoading: client.map { catalog.isLoading("projects:\($0.id)") } ?? false,
-                    disabled: client == nil, maxWidth: 150,
+                    disabled: client == nil, maxWidth: 120,
                     onOpen: { if let client { await catalog.loadProjects(for: client) } },
                     onRefresh: { if let client { await catalog.loadProjects(for: client, force: true) } },
                     onSelect: { picked in project = picked.map { Ref(id: $0.id, name: $0.name) } }
                 )
                 .help(client == nil ? "Pick a client first" : "Project")
-                dueMenu
+                SearchChip(
+                    icon: "ticket.fill", placeholder: "Ticket",
+                    selection: ticket?.title,
+                    items: client.flatMap { catalog.ticketsByClient[$0.id] } ?? [], title: \.title,
+                    badge: { $0.status },
+                    isLoading: client.map { catalog.isLoading("tickets:\($0.id)") } ?? false,
+                    disabled: client == nil, maxWidth: 120,
+                    onOpen: { if let client { await catalog.loadTickets(for: client) } },
+                    onRefresh: { if let client { await catalog.loadTickets(for: client, force: true) } },
+                    onSelect: { picked in ticket = picked }
+                )
+                .help(client == nil ? "Pick a client first" : "Work on one of this client's open tickets")
+                if ticket == nil { dueMenu }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 12)
@@ -111,7 +131,7 @@ struct QuickStartComposer: View {
                         .foregroundStyle(Theme.running)
                         .lineLimit(1)
                         .transition(.opacity)
-                } else {
+                } else if ticket == nil {
                     Button { save(.freeform) } label: {
                         Text("Just focus")
                             .font(.system(size: 11.5, weight: .medium))
@@ -130,14 +150,14 @@ struct QuickStartComposer: View {
                     }
                 }
                 .buttonStyle(ChipButtonStyle())
-                .disabled(!canSave)
-                .help("Add to Moxie and keep it in Up next")
+                .disabled(!canCreate)
+                .help(ticket == nil ? "Add to Moxie and keep it in Up next" : "Tickets are already in Up next")
                 Button { save(.focus) } label: {
                     HStack(spacing: 6) {
                         if saving == .focus { ProgressView().controlSize(.mini).tint(.white) } else {
                             Image(systemName: "play.fill").font(.system(size: 9, weight: .bold))
                         }
-                        Text("Add & focus")
+                        Text(ticket == nil ? "Add & focus" : "Focus on ticket")
                         Text("↩").font(.system(size: 11, weight: .bold)).opacity(0.55)
                     }
                     .font(.system(size: 12.5, weight: .semibold))
@@ -149,7 +169,7 @@ struct QuickStartComposer: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(!canSave)
-                .help("Add to Moxie and start focusing on it (Enter)")
+                .help(ticket == nil ? "Add to Moxie and start focusing on it (Enter)" : "Start focusing on this ticket (Enter)")
             }
             .padding(.horizontal, 12)
             .frame(height: 44)
@@ -196,17 +216,32 @@ struct QuickStartComposer: View {
     private func adoptFilter() {
         guard saving == nil else { return }
         if let filter = inbox.filterClient {
+            if filter.id != client?.id { ticket = nil }
             client = filter
             project = inbox.filterProject
-            Task { await catalog.loadProjects(for: filter) }
+            Task {
+                await catalog.loadProjects(for: filter)
+                await catalog.loadTickets(for: filter)
+            }
         } else if inbox.filterProject == nil, client != nil, trimmed.isEmpty {
             client = nil
             project = nil
+            ticket = nil
         }
     }
 
     private func save(_ kind: Kind) {
         let text = trimmed
+        if let ticket, let client {
+            // Ticket mode: focus on the existing ticket, nothing new is created in Moxie.
+            guard kind == .focus, saving == nil else { return }
+            error = nil
+            let project = project
+            name = ""
+            self.ticket = nil
+            Task { await focus.select(ticket: ticket, client: client, note: text, project: project) }
+            return
+        }
         guard !text.isEmpty, saving == nil else { return }
         error = nil
         if kind == .freeform {

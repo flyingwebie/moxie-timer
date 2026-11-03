@@ -88,6 +88,13 @@ final class FocusStore {
     var pickReason: String?
     var lastError: String?
     private(set) var isFinishing = false
+    /// Bumped each time something gets done; the widget plays confetti when it changes.
+    private(set) var celebrations = 0
+
+    func celebrate() {
+        celebrations += 1
+        NSSound(named: "Hero")?.play()
+    }
 
     @ObservationIgnored var onPhaseChange: (() -> Void)?
     @ObservationIgnored private let timer: TimerStore
@@ -156,12 +163,27 @@ final class FocusStore {
         inbox.clearJustAdded(task.id)
     }
 
+    /// Focus on an existing ticket, optionally with a note of what you're doing on it and a project for the time.
+    func select(ticket: MoxieTicket, client: Ref, note: String, project: Ref?) async {
+        var item = inbox.item(for: ticket)
+        item.client = .init(id: client.id, name: client.name)
+        item.clientId = client.id
+        await select(item)
+        guard target?.ticketId == ticket.id else { return }  // switching was cancelled
+        let note = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let project { timer.draft.project = project }
+        timer.draft.notes = note
+        if !note.isEmpty { target?.name = note }
+        target?.projectName = timer.draft.project?.name
+    }
+
     /// Focus on something that isn't a Moxie task. Client/project are picked in the Timer tab.
     func select(freeform name: String) async {
         guard await saveRunningTimeBeforeSwitching() else { return }
         target = FocusTarget(name: name)
-        timer.draft.task = nil
-        timer.draft.notes = name
+        // Start from a clean draft: keeping the previous client/project made the Timer tab show
+        // different work than the Focus tab. The composer re-applies any client/project picked with it.
+        timer.draft = EntryDraft(notes: name, billable: timer.draft.billable)
         pickReason = nil
     }
 
@@ -171,10 +193,24 @@ final class FocusStore {
         pickReason = nil
     }
 
+    /// A live timer younger than this with no client is treated as "I started the timer for this task"
+    /// and carries over. Anything older or paused is earlier work and must not end up on the new task.
+    nonisolated static let carryOverLimit: TimeInterval = 10 * 60
+
     private func saveRunningTimeBeforeSwitching() async -> Bool {
-        guard timer.session != nil else { return true }
+        guard let session = timer.session else { return true }
         guard timer.canSaveCurrent else {
-            // Nothing to save against yet — the running time simply carries over to the new task.
+            let elapsed = session.elapsed(at: .now)
+            if session.isRunning, elapsed < Self.carryOverLimit {
+                // Just started (e.g. "Start timer" from the reminder): the time belongs to the new task.
+                return true
+            }
+            // Old or paused time with no client: keep it for Review instead of adding it to the new task.
+            block = nil
+            let held = timer.holdCurrent()
+            if held > 0 {
+                banner = "Moved \(DurationFormat.short(held)) of earlier untracked time to Review — pick its client there."
+            }
             return true
         }
         let previous = timer.draft.task?.name ?? timer.draft.project?.name ?? "previous work"
@@ -321,10 +357,11 @@ final class FocusStore {
         stats.record { $0.tasksDone += 1 }
         target = nil
         banner = message
-        NSSound(named: "Hero")?.play()
+        celebrate()
     }
 
     /// Completes a task (or closes a ticket) straight from a list, without focusing on it.
+    /// The caller celebrates (the to-do checkbox does it the moment it's ticked).
     func complete(_ task: MoxieTask) async {
         do {
             let confirmed: Bool
@@ -340,7 +377,6 @@ final class FocusStore {
             banner = confirmed
                 ? "“\(task.name)” \(task.isTicket ? "closed" : "marked complete") in Moxie ✓"
                 : "Sent to Moxie, but it didn't confirm “\(task.name)” — check it there."
-            NSSound(named: "Hero")?.play()
         } catch {
             lastError = error.localizedDescription
         }

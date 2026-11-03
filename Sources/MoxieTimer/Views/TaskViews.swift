@@ -56,6 +56,8 @@ struct TaskListView: View {
                 ErrorBanner(message: error) { inbox.lastError = nil }
             }
 
+            AddTodoRow()
+
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ForEach(groups, id: \.title) { group in
@@ -396,5 +398,66 @@ struct InboxFilterBar: View {
         .frame(height: 22)
         .background(Capsule().fill(active ? Theme.navy.opacity(0.1) : .white))
         .overlay(Capsule().strokeBorder(active ? Theme.navy.opacity(0.4) : Theme.border))
+    }
+}
+
+
+/// Todoist-style quick add: type and press Enter. The task lands in Moxie, assigned to you, under the
+/// current client/project filter, and stays pinned at the top of the list.
+struct AddTodoRow: View {
+    @Environment(TaskInbox.self) private var inbox
+    @State private var name = ""
+    @State private var saving = false
+    @State private var error: String?
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                ZStack {
+                    Circle().strokeBorder(Theme.faint, style: StrokeStyle(lineWidth: 1.5, dash: focused ? [] : [2.5, 2.5]))
+                    if saving {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Image(systemName: "plus").font(.system(size: 8.5, weight: .heavy)).foregroundStyle(Theme.muted)
+                    }
+                }
+                .frame(width: 18, height: 18)
+                TextField(placeholder, text: $name)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .focused($focused)
+                    .disabled(saving)
+                    .onSubmit(add)
+            }
+            .padding(.leading, 8)
+            .padding(.vertical, 7)
+            .background(RoundedRectangle(cornerRadius: 6).fill(focused ? Theme.cream : .clear))
+            if let error {
+                ErrorBanner(message: error) { self.error = nil }
+            }
+        }
+    }
+
+    private var placeholder: String {
+        if let project = inbox.filterProject { return "Add a to-do in \(project.name)…" }
+        if let client = inbox.filterClient { return "Add a to-do for \(client.name)…" }
+        return "Add a to-do…"
+    }
+
+    private func add() {
+        let text = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !saving else { return }
+        saving = true
+        error = nil
+        Task {
+            defer { saving = false; focused = true }
+            do {
+                try await inbox.create(name: text, client: inbox.filterClient, project: inbox.filterProject, due: nil)
+                name = ""
+            } catch {
+                self.error = error.localizedDescription
+            }
+        }
     }
 }

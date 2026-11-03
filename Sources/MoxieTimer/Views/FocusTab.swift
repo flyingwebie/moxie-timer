@@ -397,26 +397,29 @@ struct TaskRow: View {
     var isNew = false
     let action: () -> Void
     @Environment(FocusStore.self) private var focus
-    @Environment(AppSettings.self) private var settings
     @State private var hovering = false
-    @State private var confirming = false
-    @State private var working = false
+    /// Ticked but not yet sent: Moxie is only updated after a short undo window, like Todoist.
+    @State private var checked = false
+    @State private var pending: Task<Void, Never>?
+
+    static let undoWindow: Duration = .seconds(2.5)
 
     var body: some View {
-        HStack(spacing: 6) {
-            Button(action: action) {
-                HStack(spacing: 10) {
-                    Circle()
-                        .fill(task.isTicket ? Theme.warmup : priorityColor)
-                        .frame(width: 8, height: 8)
-                        .frame(width: 10)
+        HStack(spacing: 10) {
+            TodoCheckbox(color: ringColor, checked: checked) { toggle() }
+                .padding(.leading, 8)
+                .help(checked ? "Undo" : (task.isTicket ? "Close this ticket in Moxie" : "Complete this task in Moxie"))
+
+            Button { checked ? toggle() : action() } label: {
+                HStack(spacing: 8) {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 5) {
                             Text(task.name)
                                 .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(Theme.ink)
+                                .foregroundStyle(checked ? Theme.faint : Theme.ink)
+                                .strikethrough(checked, color: Theme.faint)
                                 .lineLimit(1)
-                            if isNew {
+                            if isNew, !checked {
                                 Text("NEW")
                                     .font(.system(size: 8.5, weight: .heavy))
                                     .tracking(0.5)
@@ -433,70 +436,63 @@ struct TaskRow: View {
                                 Text(context).font(.system(size: 11)).foregroundStyle(Theme.muted).lineLimit(1)
                             }
                         }
+                        .opacity(checked ? 0.5 : 1)
                     }
                     Spacer(minLength: 4)
-                    if hovering, !confirming {
+                    if checked {
+                        Text("Undo")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.navy)
+                    } else if hovering {
                         Image(systemName: "play.fill")
                             .font(.system(size: 8, weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: 20, height: 20)
                             .background(Circle().fill(Theme.navy))
                             .help("Focus on this")
-                    } else if let due = task.due, !confirming {
+                    } else if let due = task.due {
                         DueBadge(date: due)
                     }
                 }
-                .padding(.leading, 8)
                 .padding(.vertical, 7)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-
-            if settings.completeInMoxie, hovering || confirming || working {
-                Button {
-                    if confirming {
-                        working = true
-                        Task {
-                            await focus.complete(task)
-                            working = false
-                            confirming = false
-                        }
-                    } else {
-                        confirming = true
-                    }
-                } label: {
-                    Group {
-                        if working {
-                            ProgressView().controlSize(.mini)
-                        } else if confirming {
-                            Text(task.isTicket ? "Close?" : "Done?").font(.system(size: 10, weight: .bold))
-                        } else {
-                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                        }
-                    }
-                    .foregroundStyle(confirming ? .white : Theme.running)
-                    .padding(.horizontal, 7)
-                    .frame(height: 22)
-                    .background(Capsule().fill(confirming ? Theme.running : Theme.running.opacity(0.12)))
-                }
-                .buttonStyle(.plain)
-                .help(task.isTicket ? "Close this ticket in Moxie (click twice)" : "Mark this task complete in Moxie (click twice)")
-            }
         }
         .padding(.trailing, 6)
-        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.cream.opacity(hovering ? 1 : 0)))
-        .onHover { inside in
-            hovering = inside
-            if !inside, !working { confirming = false }
+        .background(RoundedRectangle(cornerRadius: 6).fill(Theme.cream.opacity(hovering && !checked ? 1 : 0)))
+        .animation(.easeOut(duration: 0.15), value: checked)
+        .onHover { hovering = $0 }
+    }
+
+    /// Tick: celebrate now, send to Moxie after the undo window. Tick again (or click the row) to undo.
+    private func toggle() {
+        if checked {
+            pending?.cancel()
+            pending = nil
+            checked = false
+            return
+        }
+        checked = true
+        focus.celebrate()
+        pending = Task {
+            try? await Task.sleep(for: Self.undoWindow)
+            guard !Task.isCancelled else { return }
+            await focus.complete(task)
+            // Still on screen means Moxie refused it (the error shows in Focus); untick it.
+            checked = false
+            pending = nil
         }
     }
 
-    private var priorityColor: Color {
+    /// Todoist colours: P1 red, P2 orange, P3 blue, otherwise grey. Tickets are teal-blue.
+    private var ringColor: Color {
+        if task.isTicket { return Theme.warmup }
         switch task.priorityRank {
         case 4: return Theme.danger
         case 3: return Theme.onBreak
-        case 2: return Theme.warmup
-        default: return Theme.faint
+        case 2: return Color(red: 0.25, green: 0.45, blue: 0.85)
+        default: return Color.black.opacity(0.35)
         }
     }
 }

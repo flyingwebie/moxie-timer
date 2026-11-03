@@ -33,16 +33,28 @@ final class NudgePromptController {
             .environment(model.ui)
             .environment(model.pet)
             .environment(model.settings)
+            .environment(model.inbox)
+            .environment(model.focus)
         let host = NSHostingView(rootView: root)
         panel.contentView = host
-        let size = host.fittingSize
-        if let screen = NSScreen.main?.visibleFrame {
-            panel.setFrame(NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2 + screen.height * 0.12,
-                                  width: size.width, height: size.height), display: true)
-        }
+        self.panel = panel
+        fit()
         panel.orderFrontRegardless()
         NSSound(named: "Ping")?.play()
-        self.panel = panel
+        // The urgent list comes from the task inbox; refresh it if it's old and refit once it lands.
+        Task {
+            await model.inbox.refreshIfStale()
+            fit()
+        }
+    }
+
+    /// Sizes the panel to its content, centred a little above the middle of the screen.
+    private func fit() {
+        guard let panel, let host = panel.contentView else { return }
+        let size = host.fittingSize
+        guard let screen = NSScreen.main?.visibleFrame else { return }
+        panel.setFrame(NSRect(x: screen.midX - size.width / 2, y: screen.midY - size.height / 2 + screen.height * 0.12,
+                              width: size.width, height: size.height), display: true)
     }
 
     func hide() {
@@ -54,6 +66,8 @@ final class NudgePromptController {
 struct NudgePromptView: View {
     @Environment(ActivityWatcher.self) private var activity
     @Environment(WidgetUI.self) private var ui
+    @Environment(TaskInbox.self) private var inbox
+    @Environment(FocusStore.self) private var focus
     let close: () -> Void
 
     var body: some View {
@@ -151,6 +165,8 @@ struct NudgePromptView: View {
                 }
             }
 
+            urgentList
+
             if let suggestion = activity.suggestion {
                 Button {
                     activity.startTracking(useSuggestion: true)
@@ -200,6 +216,88 @@ struct NudgePromptView: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Theme.muted)
         }
+    }
+}
+
+// MARK: - Most urgent
+
+extension NudgePromptView {
+    /// The few most urgent open tasks/tickets (same ranking as Up next): one click starts a focus block on it.
+    @ViewBuilder var urgentList: some View {
+        let items = Array(inbox.visibleTasks.prefix(4))
+        if !items.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    CapsLabel("Most urgent")
+                    Spacer()
+                    if let since = activity.untrackedSince {
+                        Text("tracks from \(since.formatted(date: .omitted, time: .shortened))")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Theme.faint)
+                    }
+                }
+                VStack(spacing: 2) {
+                    ForEach(items) { task in
+                        UrgentRow(task: task) { start(task) }
+                    }
+                }
+                .padding(4)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Theme.cream.opacity(0.7)))
+            }
+        }
+    }
+
+    /// Focus on the task, start the timer from when you became active, and run a focus block.
+    private func start(_ task: MoxieTask) {
+        close()
+        Task {
+            await focus.select(task)
+            guard focus.target?.name == task.name else { return }  // switching failed; the error shows in Focus
+            activity.startTracking(useSuggestion: false)
+            focus.startFromTimer()
+        }
+    }
+}
+
+private struct UrgentRow: View {
+    let task: MoxieTask
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(hovering ? .white : Theme.navy)
+                    .frame(width: 20, height: 20)
+                    .background(Circle().fill(hovering ? Theme.navy : Theme.navy.opacity(0.08)))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(task.name)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Theme.ink)
+                        .lineLimit(1)
+                    HStack(spacing: 5) {
+                        KindBadge(isTicket: task.isTicket)
+                        if let client = task.client?.name {
+                            Text([client, task.project?.name].compactMap { $0 }.joined(separator: " · "))
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(Theme.muted)
+                                .lineLimit(1)
+                        }
+                    }
+                }
+                Spacer(minLength: 4)
+                if let due = task.due { DueBadge(date: due) }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 5)
+            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(hovering ? 1 : 0)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help("Start a focus block on this now")
     }
 }
 
