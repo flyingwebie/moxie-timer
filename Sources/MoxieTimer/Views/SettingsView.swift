@@ -96,6 +96,10 @@ struct SettingsView: View {
 
             Divider()
 
+            LiveTimerSettingsSection()
+
+            Divider()
+
             VStack(alignment: .leading, spacing: 8) {
                 Toggle("Keep widget above other windows", isOn: $settings.keepOnTop)
                 Toggle("Show on every Space & full-screen app", isOn: $settings.showOnAllSpaces)
@@ -199,5 +203,67 @@ struct SettingsView: View {
     private func setStatus(_ message: String, isError: Bool) {
         status = message
         statusIsError = isError
+    }
+}
+
+
+/// Connects to Moxie's MCP server so the widget runs Moxie's own live timer.
+struct LiveTimerSettingsSection: View {
+    @Environment(MoxieLiveTimer.self) private var live
+
+    var body: some View {
+        @Bindable var live = live
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                CapsLabel("Moxie live timer")
+                Text("BETA")
+                    .font(.system(size: 8.5, weight: .heavy))
+                    .foregroundStyle(Theme.navy)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 1.5)
+                    .background(Capsule().fill(Theme.navy.opacity(0.1)))
+            }
+            Text(live.isConnected
+                 ? "Connected through Moxie MCP. The widget's timer runs as your timer in Moxie, so the web app, your phone and AI assistants see the same clock."
+                 : "Sign in with Moxie (opens your browser) to run the widget's timer as your real Moxie timer. Needs a Pro or Teams workspace with MCP turned on.")
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.muted)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if live.isConnected {
+                Toggle("Use Moxie's live timer", isOn: $live.enabled)
+                    .toggleStyle(.switch)
+                    .tint(Theme.navy)
+                    .controlSize(.small)
+                    .font(.system(size: 12))
+                HStack(spacing: 8) {
+                    Label(live.lastSync.map { "In sync · \($0.formatted(date: .omitted, time: .shortened))" } ?? "Connected",
+                          systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Theme.running)
+                    Spacer()
+                    Button("Disconnect") { live.disconnect() }
+                        .buttonStyle(ChipButtonStyle())
+                }
+            } else {
+                Button {
+                    Task { await live.connect() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if live.isConnecting { ProgressView().controlSize(.small) }
+                        Text(live.isConnecting ? "Waiting for the browser…" : "Connect Moxie MCP")
+                    }
+                }
+                .buttonStyle(ChipButtonStyle())
+                .disabled(live.isConnecting)
+            }
+
+            if let error = live.lastError {
+                Text(error)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
