@@ -41,7 +41,7 @@ struct FocusSettingsSection: View {
             .tint(Theme.navy)
             .controlSize(.small)
             .font(.system(size: 12))
-            Text("Off: Finish only saves your time; you close tasks in Moxie yourself. On: also adds ✓ quick-complete to task lists.")
+            Text("Off: Finish only saves your time. Either way, tick the circle next to a task (or ticket) to complete it in Moxie — you get a few seconds to undo.")
                 .font(.system(size: 10))
                 .foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
